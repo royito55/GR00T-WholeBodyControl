@@ -1,0 +1,66 @@
+flowchart LR
+
+  %% =====================
+  %% Shared component
+  %% =====================
+  subgraph S ["GR00T Policy Server (shared)"]
+    direction TB
+    PS["run_gr00t_server.py ZMQ/RPC host=0.0.0.0 port=5556"]
+  end
+
+  %% =====================
+  %% Isaac-GR00T evaluation path
+  %% =====================
+  subgraph A ["Isaac-GR00T evaluation (single-process client + Gym env)"]
+    direction TB
+    RP["rollout_policy.py policy client + rollout loop"]
+    WBCW["WholeBodyControlWrapper in-process"]
+    ENV["SyncEnv / RoboCasa Gymnasium env"]
+    MJ["MuJoCo physics + renderer EGL headless or GLFW onscreen"]
+    VID["VideoRecordingWrapper FFmpeg encode"]
+    RP --> WBCW
+    WBCW --> ENV
+    ENV --> MJ
+    MJ --> ENV
+    ENV --> RP
+    RP -.-> VID
+  end
+
+  %% =====================
+  %% Live WBC pipeline path (sim or real)
+  %% =====================
+  subgraph L ["Live WBC pipeline (multi-process ROS2 + DDS)"]
+    direction TB
+
+    CAM["run_sim_loop.py RoboCasa+MuJoCo sim Publishes camera via ZMQ camera_port=5555"]
+
+    BR["run_groot_closed_loop_bridge.py ZMQ camera client PolicyClient(host,port) Publishes ROS goal dict"]
+
+    ROS["ROS 2 topic /ControlPolicy/upper_body_pose msgpack dict"]
+
+    CL["run_g1_control_loop.py WBC + safety Subscribes goal dict Publishes state dict"]
+
+    DDS["Unitree SDK2 DDS rt/lowcmd / rt/lowstate"]
+
+    CAM --> BR
+    BR --> ROS
+    ROS --> CL
+
+    CL --> DDS
+    DDS --> CL
+
+    %% Where the physics runs depends on mode
+    DDS --> CAM
+
+    %% Optional: swap sim with real robot
+    DDS -.-> ROBOT["Real Unitree G1 motors"]
+
+    CL --> STATE["ROS 2 topic /G1Env/env_state_act"]
+    STATE --> BR
+  end
+
+  %% =====================
+  %% Shared server connectivity
+  %% =====================
+  RP --> PS
+  BR --> PS

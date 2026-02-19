@@ -1,0 +1,40 @@
+%% GR00T Whole-Body Control: high-level architecture
+%% This diagram is meant to clarify *why* /ControlPolicy/upper_body_pose exists,
+%% and how it results in sim motion (via Unitree DDS channels).
+
+flowchart LR
+  %% --- ROS 2 layer ---
+  subgraph ROS2 ["ROS 2 topics (Python nodes)"]
+    Bridge["GR00T Bridge run_groot_closed_loop_bridge.py node: groot_closed_loop_bridge"]
+    Control["Control Loop (WBC) run_g1_control_loop.py node: ControlPolicy"]
+
+    Bridge -->|publishes\n/ControlPolicy/upper_body_pose| Control
+    Control -->|publishes\n/G1Env/env_state_act| Bridge
+  end
+
+  %% --- ZMQ layer (camera + GR00T server) ---
+  subgraph ZMQ ["ZMQ sockets"]
+    Cam["Camera Publisher (ImagePublishProcess from run_sim_loop.py)port: 5555"]
+    PolicySrv["GR00T PolicyServer (run_gr00t_server.py) port: 5556"]
+
+    Cam -->|RGB frames| Bridge
+    Bridge -->|RPC: get_action| PolicySrv
+    PolicySrv -->|action_dict| Bridge
+  end
+
+  %% --- Unitree DDS layer ---
+  subgraph DDS ["Unitree SDK2 DDS channels (CycloneDDS)"]
+    ControlDDS["Control-side Unitree I/O G1Env → BodyCommandSender HandCommandSender Publish: rt/lowcmd, rt/dex3/*/cmd Subscribe: rt/lowstate, rt/odostate, rt/secondary_imu, rt/dex3/*/state"]
+
+    Sim["Simulator process run_sim_loop.py RoboCasaG1EnvServer (UnitreeSdk2Bridge)"]
+
+    ControlDDS -->|low-level joint targets rt/lowcmd + rt/dex3/*/cmd| Sim
+    Sim -->|proprio + base pose rt/lowstate + rt/odostate + ...| ControlDDS
+  end
+
+  %% Relationship between ROS control loop and DDS I/O
+  Control -->|observe reads DDS queue_action writes DDS| ControlDDS
+
+  %% Visual note
+  Note["Key point: /ControlPolicy/upper_body_pose is a *goal* topic for the control loop. The simulator does not subscribe to it. Motion happens when the control loop publishes DDS rt/lowcmd."]
+  Note -.-> Control

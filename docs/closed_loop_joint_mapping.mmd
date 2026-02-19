@@ -1,0 +1,59 @@
+---
+title: GR00T Actions To Joints To DDS
+---
+flowchart LR
+
+  %% This diagram focuses on the joint mapping and actuation boundary.
+  %% Labels intentionally use spaces only (no \n) for Mermaid compatibility.
+
+  subgraph Bridge[Closed loop bridge process]
+    Cam[ZMQ camera frames] --> Obs[Build observation dict]
+    State[ROS state topic /G1Env/env_state_act] --> Obs
+
+    Obs --> Client[GR00T PolicyClient RPC]
+    Client --> Actions[GR00T action outputs dict]
+
+    Actions --> Map[Map action groups to target joint vectors]
+    Map --> Goal[Pack msgpack goal dict]
+    Goal --> Pub[Publish ROS goal topic /ControlPolicy/upper_body_pose]
+
+    NoteTime[target_time is required by InterpolationPolicy] --> Goal
+  end
+
+  subgraph WBC[Whole body control loop process]
+    Sub[Subscribe /ControlPolicy/upper_body_pose] --> Interp[Upper body InterpolationPolicy]
+    Interp --> WBCPolicy[G1DecoupledWholeBodyPolicy]
+    WBCPolicy --> QDes[Desired joint positions and hand commands]
+  end
+
+  Pub --> Sub
+
+  subgraph Actuation[Actual actuation channels]
+    LowCmd[DDS rt/lowcmd motor commands]
+    DexL[DDS rt/dex3/left/cmd hand commands]
+    DexR[DDS rt/dex3/right/cmd hand commands]
+  end
+
+  QDes --> LowCmd
+  QDes --> DexL
+  QDes --> DexR
+
+  subgraph Mapping[Action keys map to joint groups]
+    ActionsKeys[Example action keys left_arm right_arm waist left_hand right_hand]
+    Groups[RobotModel joint groups and indices]
+    ActionsKeys --> Groups
+    Groups --> Upper[target_upper_body_pose vector]
+  end
+
+  Actions --> ActionsKeys
+  Groups --> Map
+
+  classDef ros fill:#e8f4ff,stroke:#1f6feb,stroke-width:1px,color:#000;
+  classDef dds fill:#fff0e8,stroke:#c9480c,stroke-width:1px,color:#000;
+  classDef policy fill:#ecfff2,stroke:#2da44e,stroke-width:1px,color:#000;
+  classDef note fill:#fffbe6,stroke:#9a6700,stroke-width:1px,color:#000;
+
+  class State,Pub,Sub ros;
+  class Client,WBCPolicy policy;
+  class LowCmd,DexL,DexR dds;
+  class NoteTime note;
