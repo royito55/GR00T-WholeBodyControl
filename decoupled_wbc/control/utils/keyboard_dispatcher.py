@@ -8,6 +8,7 @@ from sshkeyboard import listen_keyboard, stop_listening
 from std_msgs.msg import String as RosStringMsg
 
 from decoupled_wbc.control.main.constants import KEYBOARD_INPUT_TOPIC
+from decoupled_wbc.control.utils.ros_utils import ROSManager
 
 # Global variable to store original terminal attributes
 _original_terminal_attrs = None
@@ -52,9 +53,10 @@ class ROSKeyboardDispatcher:
     def __init__(self):
         self.listeners = []
         self._active = False
-        assert rclpy.ok(), "Expected ROS2 to be initialized in this process..."
-        executor = rclpy.get_global_executor()
-        self.node = executor.get_nodes()[0]
+        # Use the project's ROSManager so we always have a node/executor, even if
+        # the rclpy *global* executor is unused in this process.
+        ros_manager = ROSManager()
+        self.node = ros_manager.node
         print("creating keyboard input subscriber...")
         self.subscription = self.node.create_subscription(
             RosStringMsg, KEYBOARD_INPUT_TOPIC, self._callback, 10
@@ -179,9 +181,10 @@ class KeyboardListenerPublisher:
             remote_system: RemoteSystem instance
             control_channel_name: Name of the control channel
         """
-        assert rclpy.ok(), "Expected ROS2 to be initialized in this process..."
-        executor = rclpy.get_global_executor()
-        self.node = executor.get_nodes()[0]
+        # Use the project's ROSManager so we always have a node/executor, even if
+        # the rclpy *global* executor is unused in this process.
+        ros_manager = ROSManager()
+        self.node = ros_manager.node
         self.publisher = self.node.create_publisher(RosStringMsg, topic_name, 1)
 
     def handle_keyboard_button(self, key):
@@ -194,16 +197,11 @@ class KeyboardListenerSubscriber:
         topic_name: str = KEYBOARD_LISTENER_TOPIC_NAME,
         node_name: str = "keyboard_listener_subscriber",
     ):
-        assert rclpy.ok(), "Expected ROS2 to be initialized in this process..."
-        executor = rclpy.get_global_executor()
-        nodes = executor.get_nodes()
-        if nodes:
-            self.node = nodes[0]
-            self._create_node = False
-        else:
-            self.node = rclpy.create_node("KeyboardListenerSubscriber")
-            executor.add_node(self.node)
-            self._create_node = True
+        # Use the project's ROSManager so we always have a node/executor, even if
+        # the rclpy *global* executor is unused in this process.
+        ros_manager = ROSManager()
+        self.node = ros_manager.node
+        self._create_node = False
         self.subscriber = self.node.create_subscription(RosStringMsg, topic_name, self._callback, 1)
         self._data = None
 
