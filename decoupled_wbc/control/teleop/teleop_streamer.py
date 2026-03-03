@@ -163,6 +163,7 @@ class TeleopStreamer:
         return streamer_data
 
     def get_streamer_data(self) -> StreamerOutput:
+        # Choose live device data or replay data depending on config
         if self.enable_real_device:
             streamer_data = self._get_live_data()
         elif self.replay_mode:

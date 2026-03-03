@@ -55,7 +55,7 @@ def main(config: TeleopConfig):
             replay_data_path=config.teleop_replay_path,
         )
 
-    # Create a publisher for the navigation commands
+    # Publish target pose + navigation commands to the control loop
     control_publisher = ROSMsgPublisher(CONTROL_GOAL_TOPIC)
 
     # Create rate controller

@@ -27,7 +27,7 @@ class G1Env(HumanoidEnv):
         self.robot_model = deepcopy(robot_model)  # need to cache FK results
         self.config = config
 
-        # Initialize safety monitor (visualization disabled)
+        # Initialize safety monitor (keeps commands within joint limits)
         self.safety_monitor = JointSafetyMonitor(
             robot_model, enable_viz=False, env_type=self.config.get("ENV_TYPE", "real")
         )
@@ -215,7 +215,7 @@ class G1Env(HumanoidEnv):
         )
 
     def queue_action(self, action: Dict[str, any]):
-        # Safety check
+        # Safety check before commands hit hardware/sim
         if self.last_obs is not None:
             safety_result = self.safety_monitor.handle_violations(self.last_obs, action)
             action = safety_result["action"]

@@ -133,6 +133,7 @@ class G1DecoupledWholeBodyPolicy(Policy):
         yaw_only_waist_from_torso = waist_yaw_only_rotation.T @ torso_orientation
         torso_orientation_rpy = rpy.matrixToRpy(yaw_only_waist_from_torso)
 
+        # Lower body policy can override pelvis/legs while upper body stays interpolated
         lower_body_action = self.lower_body_policy.get_action(
             time, q_arms, base_height_command, torso_orientation_rpy, interpolated_navigate_cmd
         )

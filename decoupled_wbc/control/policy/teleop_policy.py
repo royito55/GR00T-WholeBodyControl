@@ -126,7 +126,7 @@ class TeleopPolicy(Policy):
             }
         )
 
-        # Run retargeting IK
+        # Run retargeting IK to produce upper-body joint targets
         if "ik_data" in action:
             self.retargeting_ik.set_goal(action["ik_data"])
         action["target_upper_body_pose"] = self.retargeting_ik.get_action()

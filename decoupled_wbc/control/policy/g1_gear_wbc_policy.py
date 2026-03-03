@@ -217,7 +217,7 @@ class G1GearWbcPolicy(Policy):
             self.pitch_cmd = torso_orientation_rpy[1]
             self.yaw_cmd = torso_orientation_rpy[2]
 
-        # Run policy inference
+        # Run policy inference (standing vs walking ONNX based on cmd magnitude)
         with torch.no_grad():
             # Select appropriate policy based on command magnitude
             if np.linalg.norm(self.cmd) < 0.05:

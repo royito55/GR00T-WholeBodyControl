@@ -25,6 +25,7 @@ def get_wbc_policy(
 
     if robot_type == "g1":
         upper_body_policy_type = wbc_config.get("upper_body_policy_type", "interpolation")
+        # Upper body policy is either pass-through or time-interpolated targets
         if upper_body_policy_type == "identity":
             upper_body_policy = IdentityPolicy()
         else:
@@ -48,6 +49,7 @@ def get_wbc_policy(
         # Get the base path to decoupled_wbc and convert to Path object
         package_path = Path(os.path.dirname(decoupled_wbc.__file__))
         gear_wbc_config = str(package_path / ".." / wbc_config["GEAR_WBC_CONFIG"])
+        # Lower body policy uses OpenGearWbc ONNX models
         if lower_body_policy_type == "gear_wbc":
             lower_body_policy = G1GearWbcPolicy(
                 robot_model=robot_model,

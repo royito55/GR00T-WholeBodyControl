@@ -138,6 +138,7 @@ class Gr00tDataExporter(LeRobotDataset):
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        # Video writers are created per episode and flushed on save_episode()
         self.video_writers = self.create_video_writer()
 
     @property
