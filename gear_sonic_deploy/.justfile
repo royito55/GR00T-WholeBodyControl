@@ -25,7 +25,7 @@ build *build_type='Release':
 
 # Run a package
 run *package='hello':
-  @./target/release/{{package}}
+  @LD_LIBRARY_PATH="thirdparty/unitree_sdk2/thirdparty/lib/aarch64:$LD_LIBRARY_PATH" ./target/release/{{package}}
 
 # Run code quality tools
 test:
