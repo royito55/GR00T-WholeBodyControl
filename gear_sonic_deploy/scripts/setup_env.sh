@@ -331,7 +331,7 @@ check_command cmake
 check_command clang
 check_command just
 check_command git
-
+export HAS_ROS2=0
 echo ""
 echo "🎉 Environment setup complete!"
 echo ""
