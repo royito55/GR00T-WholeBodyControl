@@ -120,22 +120,22 @@ const std::array<double, 29> g1_action_scale = {
     0.25 * EFFORT_LIMIT_5020 / STIFFNESS_5020, // right_ankle_pitch_joint
     0.25 * EFFORT_LIMIT_5020 / STIFFNESS_5020, // right_ankle_roll_joint
     0.25 * EFFORT_LIMIT_7520_14 / STIFFNESS_7520_14, // waist_yaw_joint
-    0.25 * EFFORT_LIMIT_5020 / STIFFNESS_5020, // waist_roll_joint
-    0.25 * EFFORT_LIMIT_5020 / STIFFNESS_5020, // waist_pitch_joint
+    0.0, // waist_roll_joint  -- INVALID on 23DOF G1, hold at 0
+    0.0, // waist_pitch_joint -- INVALID on 23DOF G1, hold at 0
     0.25 * EFFORT_LIMIT_5020 / STIFFNESS_5020, // left_shoulder_pitch_joint
     0.25 * EFFORT_LIMIT_5020 / STIFFNESS_5020, // left_shoulder_roll_joint
     0.25 * EFFORT_LIMIT_5020 / STIFFNESS_5020, // left_shoulder_yaw_joint
     0.25 * EFFORT_LIMIT_5020 / STIFFNESS_5020, // left_elbow_joint
     0.25 * EFFORT_LIMIT_5020 / STIFFNESS_5020, // left_wrist_roll_joint
-    0.25 * EFFORT_LIMIT_4010 / STIFFNESS_4010, // left_wrist_pitch_joint
-    0.25 * EFFORT_LIMIT_4010 / STIFFNESS_4010, // left_wrist_yaw_joint
+    0.0, // left_wrist_pitch_joint  -- INVALID on 23DOF G1, hold at 0
+    0.0, // left_wrist_yaw_joint   -- INVALID on 23DOF G1, hold at 0
     0.25 * EFFORT_LIMIT_5020 / STIFFNESS_5020, // right_shoulder_pitch_joint
     0.25 * EFFORT_LIMIT_5020 / STIFFNESS_5020, // right_shoulder_roll_joint
     0.25 * EFFORT_LIMIT_5020 / STIFFNESS_5020, // right_shoulder_yaw_joint
     0.25 * EFFORT_LIMIT_5020 / STIFFNESS_5020, // right_elbow_joint
     0.25 * EFFORT_LIMIT_5020 / STIFFNESS_5020, // right_wrist_roll_joint
-    0.25 * EFFORT_LIMIT_4010 / STIFFNESS_4010, // right_wrist_pitch_joint
-    0.25 * EFFORT_LIMIT_4010 / STIFFNESS_4010, // right_wrist_yaw_joint
+    0.0, // right_wrist_pitch_joint -- INVALID on 23DOF G1, hold at 0
+    0.0, // right_wrist_yaw_joint  -- INVALID on 23DOF G1, hold at 0
 };
 
 // PID control gains - Position gains (Kp)
