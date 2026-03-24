@@ -129,7 +129,11 @@ This is a compatibility mode, not a native 23-DoF robot model.
 ## Working Command
 
 Use this on the real robot:
-
+```bash
+# in repo root
+source .venv_teleop/bin/activate
+source /opt/ros/humble/setup.bash
+```
 ```bash
 python control/main/teleop/run_g1_control_loop.py --interface real --robot-variant g1_23dof_compat --no-with-hands
 ```
@@ -183,3 +187,43 @@ Debug / low-level command changes:
 Config changes:
 - [`control/main/teleop/configs/configs.py`](/home/unitree/git-repo/GR00T-WholeBodyControl/decoupled_wbc/control/main/teleop/configs/configs.py)
 - [`control/main/teleop/configs/g1_23dof_compat_gear_wbc.yaml`](/home/unitree/git-repo/GR00T-WholeBodyControl/decoupled_wbc/control/main/teleop/configs/g1_23dof_compat_gear_wbc.yaml)
+
+# Data Collection
+
+To record robot demonstrations, run the following programs.
+
+## Control loop
+```bash
+python decoupled_wbc/control/main/teleop/run_g1_control_loop.py --interface real --robot-variant g1_23dof_compat --no-with-hands
+```
+* Wait for robot to set arms at 90º, set feet on ground, press `]`
+## Camera driver
+```bash
+ros2 launch realsense2_camera rs_launch.py
+```
+## Camera ROS2-ZMQ bridge
+```bash
+python decoupled_wbc/control/sensor/ros2_zmq_camera_bridge.py
+```
+## Camera viewer
+```bash
+python decoupled_wbc/control/main/teleop/run_camera_viewer.py --camera_host localhost --camera_port 5555 --fps 20.0
+```
+## PICO teleop
+```bash
+python decoupled_wbc/control/main/teleop/run_teleop_policy_loop.py --hand_control_device=pico --body_control_device=pico
+```
+* In PICO, run `XRobotics` App.
+	* Select robot IP in popup.
+	* Toggle `Head` and `Controller`.
+	* Toggle `SEND`
+* You should be able to move the robot (lower body) by moving controller joysticks.
+* To teleop arms, copy arm position and push `menu + right trigger`. Arms should start moving immediately.
+## Data exporter
+```bash
+python decoupled_wbc/control/main/teleop/run_g1_data_exporter.py --data_collection_frequency 20 --root_output_dir outputs --lower_body_policy gear_wbc --wbc_model_path policy/GR00T-WholeBodyControl-Balance.onnx,policy/GR00T-WholeBodyControl-Walk.onnx --camera_host localhost --camera_port 5555 --add_stereo_camera
+```
+* Enter task prompt.
+* Select whether to add recording to existing dataset.
+* Recording will start. Perform the task. `Ctrl+C` saves episode.
+ 
