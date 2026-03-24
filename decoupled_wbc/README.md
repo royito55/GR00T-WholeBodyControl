@@ -205,6 +205,8 @@ ros2 launch realsense2_camera rs_launch.py
 ```bash
 python decoupled_wbc/control/sensor/ros2_zmq_camera_bridge.py
 ```
+* This bridge forwards a single ROS image topic as `ego_view`.
+* Do not enable stereo export unless you are running a composed camera publisher that also provides `ego_view_left_mono` and `ego_view_right_mono`.
 ## Camera viewer
 ```bash
 python decoupled_wbc/control/main/teleop/run_camera_viewer.py --camera_host localhost --camera_port 5555 --fps 20.0
@@ -221,9 +223,21 @@ python decoupled_wbc/control/main/teleop/run_teleop_policy_loop.py --hand_contro
 * To teleop arms, copy arm position and push `menu + right trigger`. Arms should start moving immediately.
 ## Data exporter
 ```bash
-python decoupled_wbc/control/main/teleop/run_g1_data_exporter.py --data_collection_frequency 20 --root_output_dir outputs --lower_body_policy gear_wbc --wbc_model_path policy/GR00T-WholeBodyControl-Balance.onnx,policy/GR00T-WholeBodyControl-Walk.onnx --camera_host localhost --camera_port 5555 --add_stereo_camera
+python decoupled_wbc/control/main/teleop/run_g1_data_exporter.py --data_collection_frequency 20 --root_output_dir outputs --lower_body_policy gear_wbc --wbc_model_path policy/GR00T-WholeBodyControl-Balance.onnx,policy/GR00T-WholeBodyControl-Walk.onnx --camera_host localhost --camera_port 5555 --no-add_stereo_camera
 ```
 * Enter task prompt.
 * Select whether to add recording to existing dataset.
-* Recording will start. Perform the task. `Ctrl+C` saves episode.
+* Recording does not start automatically.
+* With the control-loop terminal focused, press `c` once to start recording and press `c` again to stop and save the episode.
+* Pressing `Ctrl+C` in the exporter process is treated as an interruption. If an episode is in progress, it is marked as discarded rather than cleanly closed.
+* Press `x` while recording to discard the current episode.
+
+## Notes For G1 23-DoF Compat
+
+The `g1_23dof_compat` path is still a 29-slot compatibility mode for the dataset schema and low-level message layout.
+
+That means:
+- dataset metadata will still list the 29-slot joint layout
+- the six missing physical joints are expected to remain in metadata
+- those joints are handled by zeroing gains in the compatibility config rather than removing them from the schema
  
