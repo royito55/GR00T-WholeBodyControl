@@ -192,6 +192,12 @@ Config changes:
 
 To record robot demonstrations, run the following programs.
 
+You must source python virtual environment before running each of the commands below:
+```bash
+# in repo root
+source .venv_teleop/bin/activate
+```
+
 ## Control loop
 ```bash
 python decoupled_wbc/control/main/teleop/run_g1_control_loop.py --interface real --robot-variant g1_23dof_compat --no-with-hands
@@ -212,6 +218,11 @@ python decoupled_wbc/control/sensor/ros2_zmq_camera_bridge.py
 python decoupled_wbc/control/main/teleop/run_camera_viewer.py --camera_host localhost --camera_port 5555 --fps 20.0
 ```
 ## PICO teleop
+Sometimes the XRoboToolkit service must be explictly ran:
+```bash
+/opt/apps/roboticsservice/runService.sh
+```
+Then run the teleop program:
 ```bash
 python decoupled_wbc/control/main/teleop/run_teleop_policy_loop.py --hand_control_device=pico --body_control_device=pico
 ```
