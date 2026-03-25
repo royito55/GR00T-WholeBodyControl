@@ -78,7 +78,12 @@ def main(config: ControlLoopConfig):
         waist_location=waist_location, high_elbow_pose=config.high_elbow_pose
     )
 
-    ros_bridge = ROSProcessBridge(node_name=CONTROL_NODE_NAME, robot_config=config.to_dict())
+    ros_bridge = ROSProcessBridge(
+        node_name=CONTROL_NODE_NAME,
+        robot_config=config.to_dict(),
+        zmq_control_goal_host=config.zmq_control_goal_host,
+        zmq_control_goal_port=config.zmq_control_goal_port,
+    )
     ros_bridge.start()
 
     env = G1Env(
