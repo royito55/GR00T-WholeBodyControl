@@ -48,6 +48,7 @@ def override_wbc_config(
         "enable_gravity_compensation": config.enable_gravity_compensation,
         "gravity_compensation_joints": config.gravity_compensation_joints,
         "high_elbow_pose": config.high_elbow_pose,
+        "debug_lowlevel_io": config.debug_lowlevel_io,
     }
 
     if missed_keys_only:
@@ -102,6 +103,9 @@ class BaseConfig(ArgsConfigTemplate):
     """Frequency of the simulation loop."""
 
     # Robot Configuration
+    robot_variant: str = "g1_29dof"
+    """Robot hardware compatibility variant. Options: g1_29dof, g1_23dof_compat."""
+
     enable_waist: bool = False
     """Whether to include waist joints in IK."""
 
@@ -132,6 +136,9 @@ class BaseConfig(ArgsConfigTemplate):
 
     verbose_timing: bool = False
     """Enable verbose timing output every iteration."""
+
+    debug_lowlevel_io: bool = False
+    """Enable low-level rt/lowstate and rt/lowcmd debug prints."""
 
     keyboard_dispatcher_type: str = "raw"
     """Keyboard dispatcher to use. [raw, ros]"""
@@ -197,7 +204,15 @@ class BaseConfig(ArgsConfigTemplate):
         package_path = Path(os.path.dirname(decoupled_wbc.__file__))
 
         if self.wbc_version == "gear_wbc":
-            config_path = str(package_path / "control/main/teleop/configs/g1_29dof_gear_wbc.yaml")
+            if self.robot_variant == "g1_29dof":
+                config_file = "g1_29dof_gear_wbc.yaml"
+            elif self.robot_variant == "g1_23dof_compat":
+                config_file = "g1_23dof_compat_gear_wbc.yaml"
+            else:
+                raise ValueError(
+                    f"Invalid robot_variant: {self.robot_variant}. Use 'g1_29dof' or 'g1_23dof_compat'."
+                )
+            config_path = str(package_path / "control/main/teleop/configs" / config_file)
         else:
             raise ValueError(
                 f"Invalid wbc_version: {self.wbc_version}, please use one of: " f"gear_wbc"
@@ -462,6 +477,25 @@ class DeploymentConfig(BaseConfig, ComposedCameraClientConfig):
 
     camera_publish_rate: float = 30.0
     """Camera publish rate (Hz)"""
+
+    enable_ros2_camera_bridge: bool = False
+    """Bridge a ROS2 image topic into the existing ZMQ camera stream for real deployments."""
+
+    ros2_camera_topic: str = "/camera/camera/color/image_raw"
+    """ROS2 image topic forwarded into the camera ZMQ bridge."""
+
+    ros2_camera_compressed: bool = False
+    """Whether the ROS2 camera topic uses sensor_msgs/CompressedImage."""
+
+    add_stereo_camera: bool = False
+    """Whether the dataset exporter should require stereo camera streams.
+
+    Keep this disabled for the default real-robot ROS2 bridge path, which forwards a
+    single ego-view topic unless an external composed-camera publisher is running.
+    """
+
+    use_tmux: bool = True
+    """Launch the deployment inside tmux. Disable for separate-terminal debugging."""
 
     view_camera: bool = True
     """Enable camera viewer"""

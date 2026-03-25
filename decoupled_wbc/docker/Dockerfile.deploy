@@ -1,4 +1,5 @@
-FROM nvgear/ros-2:latest
+ARG BASE_IMAGE=nvgear/ros-2:latest
+FROM ${BASE_IMAGE}
 
 # Accept build argument for username
 ARG USERNAME

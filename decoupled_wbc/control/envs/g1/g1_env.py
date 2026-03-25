@@ -8,11 +8,10 @@ from scipy.spatial.transform import Rotation as R
 from decoupled_wbc.control.base.humanoid_env import Hands, HumanoidEnv
 from decoupled_wbc.control.envs.g1.g1_body import G1Body
 from decoupled_wbc.control.envs.g1.g1_hand import G1ThreeFingerHand
-from decoupled_wbc.control.envs.g1.sim.simulator_factory import SimulatorFactory, init_channel
+from unitree_sdk2py.core.channel import ChannelFactoryInitialize
 from decoupled_wbc.control.envs.g1.utils.joint_safety import JointSafetyMonitor
 from decoupled_wbc.control.robot_model.instantiation.g1 import instantiate_g1_robot_model
 from decoupled_wbc.control.robot_model.robot_model import RobotModel
-from decoupled_wbc.control.utils.ros_utils import ROSManager
 
 
 class G1Env(HumanoidEnv):
@@ -35,7 +34,10 @@ class G1Env(HumanoidEnv):
         self.last_obs = None
         self.last_safety_ok = True  # Track last safety status from queue_action
 
-        init_channel(config=self.config)
+        if config.get("INTERFACE", None):
+            ChannelFactoryInitialize(config["DOMAIN_ID"], config["INTERFACE"])
+        else:
+            ChannelFactoryInitialize(config["DOMAIN_ID"])
 
         # Initialize body and hands
         self._body = G1Body(config=self.config)
@@ -60,6 +62,7 @@ class G1Env(HumanoidEnv):
 
         if self.use_sim:
             # Create simulator using factory
+            from decoupled_wbc.control.envs.g1.sim.simulator_factory import SimulatorFactory
 
             kwargs.update(
                 {
@@ -80,10 +83,6 @@ class G1Env(HumanoidEnv):
             # using the real robot
             self.calibrate_hands()
 
-        # Initialize ROS 2 node
-        self.ros_manager = ROSManager(node_name="g1_env")
-        self.ros_node = self.ros_manager.node
-
         self.delay_list = []
         self.visualize_delay = False
         self.print_delay_interval = 100
@@ -91,6 +90,8 @@ class G1Env(HumanoidEnv):
 
     def start_simulator(self):
         # imag epublish disabled since the sim is running in a sub-thread
+        from decoupled_wbc.control.envs.g1.sim.simulator_factory import SimulatorFactory
+
         SimulatorFactory.start_simulator(self.sim, as_thread=True, enable_image_publish=False)
 
     def step_simulator(self):

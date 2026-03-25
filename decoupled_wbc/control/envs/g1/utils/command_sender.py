@@ -1,7 +1,8 @@
+import time
 from typing import Dict
 
 import numpy as np
-from unitree_sdk2py.core.channel import ChannelPublisher
+from unitree_sdk2py.core.channel import ChannelPublisher, ChannelSubscriber
 from unitree_sdk2py.idl.default import unitree_hg_msg_dds__HandCmd_
 from unitree_sdk2py.idl.unitree_hg.msg.dds_ import HandCmd_
 from unitree_sdk2py.utils.crc import CRC
@@ -10,6 +11,7 @@ from unitree_sdk2py.utils.crc import CRC
 class BodyCommandSender:
     def __init__(self, config: Dict):
         self.config = config
+        self.debug_lowlevel_io = self.config.get("debug_lowlevel_io", False)
         if self.config["ROBOT_TYPE"] == "h1" or self.config["ROBOT_TYPE"] == "go2":
             from unitree_sdk2py.idl.default import unitree_go_msg_dds__LowCmd_
             from unitree_sdk2py.idl.unitree_go.msg.dds_ import LowCmd_
@@ -41,12 +43,31 @@ class BodyCommandSender:
         self.weak_motor_joint_index = []
         for _, value in self.config["WeakMotorJointIndex"].items():
             self.weak_motor_joint_index.append(value)
+        self.low_state = None
+        self.lowstate_subscriber = None
+        if self.config["ROBOT_TYPE"] == "h1" or self.config["ROBOT_TYPE"] == "go2":
+            from unitree_sdk2py.idl.unitree_go.msg.dds_ import LowState_
+
+            self.lowstate_subscriber = ChannelSubscriber("rt/lowstate", LowState_)
+            self.lowstate_subscriber.Init(None, 0)
+        elif (
+            self.config["ROBOT_TYPE"] == "g1_29dof"
+            or self.config["ROBOT_TYPE"] == "h1-2_21dof"
+            or self.config["ROBOT_TYPE"] == "h1-2_27dof"
+        ):
+            from unitree_sdk2py.idl.unitree_hg.msg.dds_ import LowState_
+
+            self.lowstate_subscriber = ChannelSubscriber("rt/lowstate", LowState_)
+            self.lowstate_subscriber.Init(None, 0)
+
         # init low cmd publisher
         self.lowcmd_publisher_ = ChannelPublisher("rt/lowcmd", LowCmd_)
         self.lowcmd_publisher_.Init()
         self.InitLowCmd()
-        self.low_state = None
         self.crc = CRC()
+        self._debug_send_count = 0
+        self._debug_last_send_log_time = 0.0
+        self._debug_last_missing_mode_log_time = 0.0
 
     def InitLowCmd(self):
         # h1/go2:
@@ -82,6 +103,20 @@ class BodyCommandSender:
         return motor_index in self.weak_motor_joint_index
 
     def send_command(self, cmd_q: np.ndarray, cmd_dq: np.ndarray, cmd_tau: np.ndarray):
+        if self.lowstate_subscriber is not None:
+            latest_low_state = self.lowstate_subscriber.Read()
+            if latest_low_state is not None and hasattr(latest_low_state, "mode_machine"):
+                self.low_state = latest_low_state
+                self.low_cmd.mode_machine = latest_low_state.mode_machine
+            elif self.low_state is None:
+                now = time.monotonic()
+                if self.debug_lowlevel_io and now - self._debug_last_missing_mode_log_time > 1.0:
+                    print(
+                        "[BodyCommandSender] No rt/lowstate available for mode_machine sync; "
+                        f"using config value {getattr(self.low_cmd, 'mode_machine', 'n/a')}"
+                    )
+                    self._debug_last_missing_mode_log_time = now
+
         for i in range(self.config["NUM_MOTORS"]):
             motor_index = self.config["JOINT2MOTOR"][i]
             joint_index = self.config["MOTOR2JOINT"][i]
@@ -103,6 +138,24 @@ class BodyCommandSender:
 
         self.low_cmd.crc = self.crc.Crc(self.low_cmd)
         self.lowcmd_publisher_.Write(self.low_cmd)
+
+        self._debug_send_count += 1
+        now = time.monotonic()
+        if self.debug_lowlevel_io and (
+            self._debug_send_count == 1 or now - self._debug_last_send_log_time > 2.0
+        ):
+            first_motor = self.config["JOINT2MOTOR"][0]
+            cmd = self.low_cmd.motor_cmd[first_motor]
+            print(
+                "[BodyCommandSender] lowcmd publish: "
+                f"count={self._debug_send_count}, "
+                f"mode_machine={getattr(self.low_cmd, 'mode_machine', 'n/a')}, "
+                f"mode_pr={getattr(self.low_cmd, 'mode_pr', 'n/a')}, "
+                f"motor0_mode={cmd.mode}, "
+                f"motor0_q={cmd.q:.4f}, motor0_dq={cmd.dq:.4f}, "
+                f"motor0_kp={cmd.kp:.2f}, motor0_kd={cmd.kd:.2f}"
+            )
+            self._debug_last_send_log_time = now
 
 
 def make_hand_mode(motor_index: int) -> int:

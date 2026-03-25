@@ -1,4 +1,5 @@
 from pathlib import Path
+import shlex
 import signal
 import subprocess
 import sys
@@ -26,8 +27,9 @@ class G1Deployment:
         # Tmux session name
         self.session_name = "g1_deployment"
 
-        # Create tmux session if it doesn't exist
-        self._create_tmux_session()
+        # Create tmux session if requested
+        if self.config.use_tmux:
+            self._create_tmux_session()
 
     def _create_tmux_session(self):
         """Create a new tmux session if it doesn't exist"""
@@ -92,6 +94,185 @@ class G1Deployment:
 
         return True
 
+    def _format_cmd(self, cmd):
+        return " ".join(shlex.quote(str(x)) for x in cmd)
+
+    def _append_common_bool_flags(self, cmd, pairs):
+        for enabled, yes_flag, no_flag in pairs:
+            cmd.append(yes_flag if enabled else no_flag)
+        return cmd
+
+    def build_camera_bridge_cmd(self):
+        if not self.config.enable_ros2_camera_bridge or self.config.env_type != "real":
+            return None
+        cmd = [
+            sys.executable,
+            str(self.project_root / "control/sensor/ros2_zmq_camera_bridge.py"),
+            "--topic",
+            self.config.ros2_camera_topic,
+            "--port",
+            str(self.config.camera_port),
+            "--fps",
+            str(self.config.camera_publish_rate),
+        ]
+        cmd.append("--compressed" if self.config.ros2_camera_compressed else "--no-compressed")
+        return cmd
+
+    def build_camera_viewer_cmd(self):
+        if not self.config.view_camera:
+            return None
+        return [
+            sys.executable,
+            str(self.project_root / "control/main/teleop/run_camera_viewer.py"),
+            "--camera_host",
+            self.config.camera_host,
+            "--camera_port",
+            str(self.config.camera_port),
+            "--fps",
+            str(self.config.fps),
+        ]
+
+    def build_sim_loop_cmd(self):
+        cmd = [
+            sys.executable,
+            str(self.project_root / "control/main/teleop/run_sim_loop.py"),
+            "--wbc_version",
+            self.config.wbc_version,
+            "--interface",
+            self.config.interface,
+            "--simulator",
+            self.config.simulator,
+            "--sim_frequency",
+            str(self.config.sim_frequency),
+            "--env_name",
+            self.config.env_name,
+            "--camera_port",
+            str(self.config.camera_port),
+        ]
+        self._append_common_bool_flags(
+            cmd,
+            [
+                (self.config.enable_waist, "--enable_waist", "--no-enable_waist"),
+                (self.config.with_hands, "--with_hands", "--no-with_hands"),
+                (self.config.image_publish, "--enable_image_publish", "--no-enable_image_publish"),
+                (self.config.enable_onscreen, "--enable_onscreen", "--no-enable_onscreen"),
+            ],
+        )
+        if self.config.image_publish:
+            cmd.append("--enable_offscreen")
+        return cmd
+
+    def build_control_loop_cmd(self):
+        cmd = [
+            sys.executable,
+            str(self.project_root / "control/main/teleop/run_g1_control_loop.py"),
+            "--wbc_version",
+            self.config.wbc_version,
+            "--wbc_model_path",
+            self.config.wbc_model_path,
+            "--wbc_policy_class",
+            self.config.wbc_policy_class,
+            "--interface",
+            self.config.interface,
+            "--simulator",
+            "None" if self.config.sim_in_single_process else self.config.simulator,
+            "--control_frequency",
+            str(self.config.control_frequency),
+        ]
+        self._append_common_bool_flags(
+            cmd,
+            [
+                (self.config.enable_waist, "--enable_waist", "--no-enable_waist"),
+                (self.config.with_hands, "--with_hands", "--no-with_hands"),
+                (self.config.high_elbow_pose, "--high_elbow_pose", "--no-high_elbow_pose"),
+                (self.config.enable_gravity_compensation, "--enable_gravity_compensation", "--no-enable_gravity_compensation"),
+            ],
+        )
+        if self.config.enable_gravity_compensation and self.config.gravity_compensation_joints:
+            cmd.extend(["--gravity_compensation_joints", *self.config.gravity_compensation_joints])
+        return cmd
+
+    def build_teleop_cmd(self):
+        if not self.config.enable_upper_body_operation:
+            return None
+        cmd = [
+            sys.executable,
+            str(self.project_root / "control/main/teleop/run_teleop_policy_loop.py"),
+            "--body_control_device",
+            self.config.body_control_device,
+            "--hand_control_device",
+            self.config.hand_control_device,
+            "--body_streamer_ip",
+            self.config.body_streamer_ip,
+            "--body_streamer_keyword",
+            self.config.body_streamer_keyword,
+        ]
+        self._append_common_bool_flags(
+            cmd,
+            [
+                (self.config.enable_waist, "--enable_waist", "--no-enable_waist"),
+                (self.config.high_elbow_pose, "--high_elbow_pose", "--no-high_elbow_pose"),
+                (self.config.enable_visualization, "--enable_visualization", "--no-enable_visualization"),
+                (self.config.enable_real_device, "--enable_real_device", "--no-enable_real_device"),
+            ],
+        )
+        return cmd
+
+    def build_data_collection_cmd(self):
+        if not self.config.data_collection:
+            return None
+        cmd = [
+            sys.executable,
+            str(self.project_root / "control/main/teleop/run_g1_data_exporter.py"),
+            "--data_collection_frequency",
+            str(self.config.data_collection_frequency),
+            "--root_output_dir",
+            self.config.root_output_dir,
+            "--lower_body_policy",
+            self.config.wbc_version,
+            "--wbc_model_path",
+            self.config.wbc_model_path,
+            "--camera_host",
+            self.config.camera_host,
+            "--camera_port",
+            str(self.config.camera_port),
+        ]
+        cmd.append("--add_stereo_camera" if self.config.add_stereo_camera else "--no-add_stereo_camera")
+        return cmd
+
+    def build_webcam_cmd(self):
+        if not self.config.enable_webcam_recording or self.config.env_type != "real":
+            return None
+        return [
+            sys.executable,
+            str(self.project_root / "scripts/run_webcam_recorder.py"),
+            "--output_dir",
+            self.config.webcam_output_dir,
+        ]
+
+    def print_separate_process_commands(self):
+        print("\nRun these in separate terminals:")
+        processes = []
+        if self.config.sim_in_single_process:
+            processes.append(("sim_loop", self.build_sim_loop_cmd()))
+        processes.extend(
+            [
+                ("control", self.build_control_loop_cmd()),
+                ("camera_bridge", self.build_camera_bridge_cmd()),
+                ("camera_viewer", self.build_camera_viewer_cmd()),
+                ("teleop", self.build_teleop_cmd()),
+                ("data", self.build_data_collection_cmd()),
+                ("webcam", self.build_webcam_cmd()),
+            ]
+        )
+        idx = 1
+        for name, cmd in processes:
+            if cmd is None:
+                continue
+            print(f"\n[{idx}] {name}")
+            print(self._format_cmd(cmd))
+            idx += 1
+
     def start_camera_sensor(self):
         """Start the camera sensor in local mode if we are using replay video"""
         if self.config.egoview_replay_dummy is None and self.config.head_replay_dummy is None:
@@ -116,6 +297,34 @@ class G1Deployment:
             print("Continuing without camera sensor...")
         else:
             print("Camera sensor started successfully.")
+
+    def start_camera_bridge(self):
+        """Start ROS2-to-ZMQ camera bridge for real deployments."""
+        if not self.config.enable_ros2_camera_bridge or self.config.env_type != "real":
+            return
+
+        print("Starting ROS2 camera bridge...")
+        cmd = [
+            sys.executable,
+            str(self.project_root / "control/sensor/ros2_zmq_camera_bridge.py"),
+            "--topic",
+            self.config.ros2_camera_topic,
+            "--port",
+            str(self.config.camera_port),
+            "--fps",
+            str(self.config.camera_publish_rate),
+        ]
+
+        if self.config.ros2_camera_compressed:
+            cmd.append("--compressed")
+        else:
+            cmd.append("--no-compressed")
+
+        if not self._run_in_tmux("camera_bridge", cmd):
+            print("ERROR: ROS2 camera bridge failed to start!")
+            print("Continuing without camera bridge...")
+        else:
+            print("ROS2 camera bridge started successfully.")
 
     def start_camera_viewer(self):
         """Start the ROS rqt camera viewer"""
@@ -324,6 +533,11 @@ class G1Deployment:
             str(self.config.camera_port),
         ]
 
+        if self.config.add_stereo_camera:
+            cmd.append("--add_stereo_camera")
+        else:
+            cmd.append("--no-add_stereo_camera")
+
         if not self._run_in_tmux("data", cmd, pane_index=1):
             print("ERROR: Data collection failed to start!")
             print("Continuing without data collection...")
@@ -379,6 +593,10 @@ class G1Deployment:
             if not show_deployment_checklist():
                 sys.exit(1)
 
+        if not self.config.use_tmux:
+            self.print_separate_process_commands()
+            return
+
         # Register signal handler for clean shutdown
         signal.signal(signal.SIGINT, self.signal_handler)
 
@@ -388,6 +606,7 @@ class G1Deployment:
             self.start_sim_loop()
 
         self.start_control_loop()
+        self.start_camera_bridge()
         self.start_camera_viewer()
         self.start_policy()  # This will start either teleop or inference policy
         self.start_data_collection()
@@ -437,6 +656,9 @@ class G1Deployment:
 
     def cleanup(self):
         """Clean up tmux session"""
+        if not self.config.use_tmux:
+            print("No tmux session to clean up.")
+            return
         print("Cleaning up tmux session...")
         try:
             # Kill the tmux session

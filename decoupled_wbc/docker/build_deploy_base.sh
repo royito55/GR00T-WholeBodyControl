@@ -1,15 +1,29 @@
 #!/bin/bash
 
-# Multi-architecture Docker build script
-# Supports linux/amd64
+# Docker build script for the deploy base image
 
 set -e
 
 # Configuration
 IMAGE_NAME="nvgear/ros-2"
 TAG="${1:-latest}"
+PLATFORM="${2:-$(dpkg --print-architecture)}"
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 DOCKERFILE="$SCRIPT_DIR/Dockerfile.deploy.base"
+
+case "$PLATFORM" in
+    amd64|linux/amd64)
+        DOCKER_PLATFORM="linux/amd64"
+        ;;
+    arm64|linux/arm64|aarch64)
+        DOCKER_PLATFORM="linux/arm64"
+        ;;
+    *)
+        echo "Unsupported platform: $PLATFORM"
+        echo "Use one of: amd64, arm64, linux/amd64, linux/arm64"
+        exit 1
+        ;;
+esac
 
 # Colors for output
 RED='\033[0;31m'
@@ -17,40 +31,26 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
-echo -e "${GREEN}Building multi-architecture Docker image: ${IMAGE_NAME}:${TAG}${NC}"
+echo -e "${GREEN}Building Docker image: ${IMAGE_NAME}:${TAG}${NC}"
+echo -e "${YELLOW}Target platform: ${DOCKER_PLATFORM}${NC}"
 
-# Ensure we're using the multiarch builder
-echo -e "${YELLOW}Setting up multiarch builder...${NC}"
-sudo docker buildx use multiarch-builder 2>/dev/null || {
-    echo -e "${YELLOW}Creating multiarch builder...${NC}"
-    sudo docker buildx create --name multiarch-builder --use --bootstrap
-}
+if [ "$DOCKER_PLATFORM" = "linux/arm64" ]; then
+    echo -e "${YELLOW}Using native docker build for local ARM64 builds.${NC}"
+    docker build --network host --file "${DOCKERFILE}"         --tag "${IMAGE_NAME}:${TAG}"         .
+else
+    echo -e "${YELLOW}Setting up buildx builder...${NC}"
+    docker buildx use multiarch-builder 2>/dev/null || {
+        echo -e "${YELLOW}Creating multiarch builder...${NC}"
+        docker buildx create --name multiarch-builder --use --bootstrap
+    }
 
-# Show supported platforms
-echo -e "${YELLOW}Supported platforms:${NC}"
-sudo docker buildx inspect --bootstrap | grep Platforms
+    echo -e "${YELLOW}Supported platforms:${NC}"
+    docker buildx inspect --bootstrap | grep Platforms
 
-# Build for multiple architectures
-echo -e "${GREEN}Starting multi-arch build...${NC}"
-sudo docker buildx build \
-    --platform linux/amd64 \
-    --file "${DOCKERFILE}" \
-    --tag "${IMAGE_NAME}:${TAG}" \
-    --push \
-    .
+    echo -e "${GREEN}Starting buildx build...${NC}"
+    docker buildx build --network host --platform "${DOCKER_PLATFORM}"         --file "${DOCKERFILE}"         --tag "${IMAGE_NAME}:${TAG}"         --load         .
+fi
 
-# Alternative: Build and load locally (only works for single platform)
-# docker buildx build \
-#     --platform linux/amd64 \
-#     --file "${DOCKERFILE}" \
-#     --tag "${IMAGE_NAME}:${TAG}" \
-#     --load \
-#     .
-
-echo -e "${GREEN}Multi-arch build completed successfully!${NC}"
+echo -e "${GREEN}Build completed successfully!${NC}"
 echo -e "${GREEN}Image: ${IMAGE_NAME}:${TAG}${NC}"
-echo -e "${GREEN}Platforms: linux/amd64${NC}"
-
-# Verify the manifest
-echo -e "${YELLOW}Verifying multi-arch manifest...${NC}"
-sudo docker buildx imagetools inspect "${IMAGE_NAME}:${TAG}" 
+echo -e "${GREEN}Platform: ${DOCKER_PLATFORM}${NC}"

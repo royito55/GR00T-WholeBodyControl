@@ -42,6 +42,7 @@ EXTRA_ARGS=()
 PROJECT_NAME="decoupled_wbc"
 PROJECT_SLUG=$(echo "$PROJECT_NAME" | tr '[:upper:]' '[:lower:]')
 REMOTE_IMAGE="nvgear/gr00t_wbc:latest"
+LOCAL_ARM64_BASE_IMAGE="local/${PROJECT_SLUG}-ros-2:arm64"
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -175,12 +176,12 @@ function clean_container {
     echo "Cleaning up Docker containers..."
     
     # Stop containers
-    sudo docker stop $DEPLOY_CONTAINER 2>/dev/null || true
-    sudo docker stop $BASH_CONTAINER 2>/dev/null || true
+    docker stop $DEPLOY_CONTAINER 2>/dev/null || true
+    docker stop $BASH_CONTAINER 2>/dev/null || true
     # Remove containers
     echo "Removing containers..."
-    sudo docker rm $DEPLOY_CONTAINER 2>/dev/null || true
-    sudo docker rm $BASH_CONTAINER 2>/dev/null || true
+    docker rm $DEPLOY_CONTAINER 2>/dev/null || true
+    docker rm $BASH_CONTAINER 2>/dev/null || true
     echo "Containers cleaned!"
 }
 
@@ -188,7 +189,7 @@ function clean_container {
 # Function to install Docker Buildx if needed
 function install_docker_buildx {
     # Check if Docker Buildx is already installed
-    if sudo docker buildx version &> /dev/null; then
+    if docker buildx version &> /dev/null; then
         echo "Docker Buildx is already installed."
         return 0
     fi
@@ -210,8 +211,8 @@ function install_docker_buildx {
     chmod +x ~/.docker/cli-plugins/docker-buildx && sudo chmod +x /root/.docker/cli-plugins/docker-buildx
     
     # Create builder
-    sudo docker buildx create --use --name mybuilder || true
-    sudo docker buildx inspect --bootstrap
+    docker buildx create --use --name mybuilder || true
+    docker buildx inspect --bootstrap
     
     echo "Docker Buildx installation complete!"
 }
@@ -266,20 +267,22 @@ function install_nvidia_toolkit {
 function build_docker_image {
     echo "Building Docker image: $DEPLOY_CONTAINER"
 
-    sudo docker buildx build \
-        --build-arg USERNAME=$USERNAME \
-        --build-arg USERID=$USERID \
-        --build-arg HOME_DIR=$DOCKER_HOME_DIR \
-        --build-arg WORKTREE_NAME=$WORKTREE_NAME \
-        --cache-from $CACHE_FROM \
-        -t $DEPLOY_CONTAINER \
-        -f "$SCRIPT_DIR/Dockerfile.deploy" \
-        --load \
-        "$PROJECT_DIR"
+    if is_arm64; then
+        echo "ARM64 host detected, using local ARM64 base image: $LOCAL_ARM64_BASE_IMAGE"
+        docker build --network host --build-arg BASE_IMAGE=$LOCAL_ARM64_BASE_IMAGE             --build-arg USERNAME=$USERNAME             --build-arg USERID=$USERID             --build-arg HOME_DIR=$DOCKER_HOME_DIR             --build-arg WORKTREE_NAME=$WORKTREE_NAME             -t $DEPLOY_CONTAINER             -f "$SCRIPT_DIR/Dockerfile.deploy"             "$PROJECT_DIR"
+    else
+        docker buildx build --network host --build-arg USERNAME=$USERNAME             --build-arg USERID=$USERID             --build-arg HOME_DIR=$DOCKER_HOME_DIR             --build-arg WORKTREE_NAME=$WORKTREE_NAME             --cache-from $CACHE_FROM             -t $DEPLOY_CONTAINER             -f "$SCRIPT_DIR/Dockerfile.deploy"             --load             "$PROJECT_DIR"
+    fi
 
     # Tag for persistent cache
-    # sudo docker tag $DEPLOY_CONTAINER $CACHE_FROM
+    # docker tag $DEPLOY_CONTAINER $CACHE_FROM
     echo "Docker image build complete!"
+}
+
+function build_arm64_base_image {
+    echo "Building local ARM64 ROS 2 base image: $LOCAL_ARM64_BASE_IMAGE"
+    docker build --network host -t $LOCAL_ARM64_BASE_IMAGE         -f "$SCRIPT_DIR/Dockerfile.deploy.base"         "$PROJECT_DIR"
+    echo "Local ARM64 base image build complete!"
 }
 
 # Build function 
@@ -288,12 +291,17 @@ function build_with_cleanup {
     echo "Removing existing containers and images..."
     clean_container
     # Tag for persistent cache before deleting the image
-    sudo docker tag $DEPLOY_CONTAINER $CACHE_FROM 2>/dev/null || true
-    sudo docker rmi $DEPLOY_CONTAINER 2>/dev/null || true
+    docker tag $DEPLOY_CONTAINER $CACHE_FROM 2>/dev/null || true
+    docker rmi $DEPLOY_CONTAINER 2>/dev/null || true
     echo "Images cleaned!"
     
-    install_docker_buildx
-    install_nvidia_toolkit
+    if is_arm64; then
+        install_nvidia_toolkit
+        build_arm64_base_image
+    else
+        install_docker_buildx
+        install_nvidia_toolkit
+    fi
     build_docker_image
 }
 
@@ -301,9 +309,9 @@ function install_remote_image {
     echo "Installing Docker image from remote registry: $REMOTE_IMAGE"
     echo "Removing existing containers to ensure a clean install..."
     clean_container
-    sudo docker pull "$REMOTE_IMAGE"
-    sudo docker tag "$REMOTE_IMAGE" "$DEPLOY_CONTAINER"
-    sudo docker tag "$REMOTE_IMAGE" "$CACHE_FROM" 2>/dev/null || true
+    docker pull "$REMOTE_IMAGE"
+    docker tag "$REMOTE_IMAGE" "$DEPLOY_CONTAINER"
+    docker tag "$REMOTE_IMAGE" "$CACHE_FROM" 2>/dev/null || true
     echo "Docker image install complete!"
 }
 
@@ -324,8 +332,8 @@ fi
 
 if [ "$DOCKER_HUB_PUSH" = true ]; then
     echo "Pushing Docker image to Docker Hub: docker.io/${REMOTE_IMAGE}"
-    sudo docker tag $DEPLOY_CONTAINER docker.io/${REMOTE_IMAGE}
-    sudo docker push docker.io/${REMOTE_IMAGE}
+    docker tag $DEPLOY_CONTAINER docker.io/${REMOTE_IMAGE}
+    docker push docker.io/${REMOTE_IMAGE}
     echo "Docker image pushed to Docker Hub!"
     exit 0
 fi
@@ -354,7 +362,7 @@ setup_x11 && X11_ENABLED=true
 
 # Mount entire /dev directory for dynamic device access (including hidraw for joycon)
 # This allows JoyCon controllers to be detected even when connected after container launch
-sudo chmod g+r+w /dev/input/*
+chmod g+r+w /dev/input/* 2>/dev/null || true
 
 # Detect GPU setup and set appropriate environment variables
 echo "Detecting GPU setup..."
@@ -423,11 +431,11 @@ if [ "$DEPLOY" = true ]; then
        
     # Clean up old processes and create a fresh deploy container
     # Remove existing deploy container if it exists
-    if sudo docker ps -a --format '{{.Names}}' | grep -q "^$DEPLOY_CONTAINER$"; then
+    if docker ps -a --format '{{.Names}}' | grep -q "^$DEPLOY_CONTAINER$"; then
         echo "Removing existing deploy container..."
-        sudo docker rm -f $DEPLOY_CONTAINER
+        docker rm -f $DEPLOY_CONTAINER
     fi
-    sudo docker run -it --rm $DOCKER_RUN_ARGS \
+    docker run -it --rm $DOCKER_RUN_ARGS \
         -w $DOCKER_HOME_DIR/Projects/$WORKTREE_NAME \
         --name $DEPLOY_CONTAINER \
         $DEPLOY_CONTAINER \
@@ -436,13 +444,13 @@ if [ "$DEPLOY" = true ]; then
         "${EXTRA_ARGS[@]}"
 else
     # Bash mode - use decoupled_wbc-bash-${USERNAME} container
-    if sudo docker ps -a --format '{{.Names}}' | grep -q "^$BASH_CONTAINER$"; then
+    if docker ps -a --format '{{.Names}}' | grep -q "^$BASH_CONTAINER$"; then
         echo "Bash container exists, starting it..."
-        sudo docker start $BASH_CONTAINER > /dev/null
-        sudo docker exec -it $BASH_CONTAINER /bin/bash
+        docker start $BASH_CONTAINER > /dev/null
+        docker exec -it $BASH_CONTAINER /bin/bash
     else
         echo "Creating new bash container with auto-install decoupled_wbc..."
-        sudo docker run -it $DOCKER_RUN_ARGS \
+        docker run -it $DOCKER_RUN_ARGS \
             -w $DOCKER_HOME_DIR/Projects/$WORKTREE_NAME \
             --name $BASH_CONTAINER \
             $DEPLOY_CONTAINER \

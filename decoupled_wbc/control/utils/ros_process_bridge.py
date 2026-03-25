@@ -1,0 +1,172 @@
+import multiprocessing as mp
+import queue
+import time
+from typing import Any, Optional
+
+from decoupled_wbc.control.main.constants import (
+    CONTROL_GOAL_TOPIC,
+    JOINT_SAFETY_STATUS_TOPIC,
+    KEYBOARD_INPUT_TOPIC,
+    LOWER_BODY_POLICY_STATUS_TOPIC,
+    ROBOT_CONFIG_TOPIC,
+    STATE_TOPIC_NAME,
+)
+from decoupled_wbc.control.utils.keyboard_dispatcher import KEYBOARD_LISTENER_TOPIC_NAME
+
+
+def _drain_latest(mp_queue, value):
+    try:
+        while True:
+            mp_queue.get_nowait()
+    except queue.Empty:
+        pass
+    mp_queue.put(value)
+
+
+def _ros_bridge_worker(
+    node_name: str,
+    robot_config: dict,
+    command_queue,
+    control_goal_queue,
+    keyboard_queue,
+    stop_event,
+):
+    from std_msgs.msg import String as RosStringMsg
+
+    from decoupled_wbc.control.utils.ros_utils import (
+        ROSManager,
+        ROSMsgPublisher,
+        ROSMsgSubscriber,
+        ROSServiceServer,
+    )
+
+    ros_manager = ROSManager(node_name=node_name)
+    node = ros_manager.node
+
+    ROSServiceServer(ROBOT_CONFIG_TOPIC, robot_config)
+    publishers = {
+        'state': ROSMsgPublisher(STATE_TOPIC_NAME),
+        'lower_body_policy_status': ROSMsgPublisher(LOWER_BODY_POLICY_STATUS_TOPIC),
+        'joint_safety_status': ROSMsgPublisher(JOINT_SAFETY_STATUS_TOPIC),
+    }
+    keyboard_listener_pub = node.create_publisher(RosStringMsg, KEYBOARD_LISTENER_TOPIC_NAME, 1)
+    control_goal_subscriber = ROSMsgSubscriber(CONTROL_GOAL_TOPIC)
+
+    def keyboard_input_callback(msg: RosStringMsg):
+        _drain_latest(keyboard_queue, msg.data)
+
+    keyboard_subscription = node.create_subscription(
+        RosStringMsg, KEYBOARD_INPUT_TOPIC, keyboard_input_callback, 10
+    )
+
+    try:
+        while ros_manager.ok() and not stop_event.is_set():
+            upper_body_cmd = control_goal_subscriber.get_msg()
+            if upper_body_cmd is not None:
+                _drain_latest(control_goal_queue, upper_body_cmd)
+
+            try:
+                command, payload = command_queue.get(timeout=0.01)
+            except queue.Empty:
+                continue
+
+            if command == 'shutdown':
+                break
+            if command == 'keyboard_listener_key':
+                keyboard_listener_pub.publish(RosStringMsg(data=payload))
+                continue
+
+            publisher = publishers.get(command)
+            if publisher is None:
+                print(f'Unknown ROS bridge command: {command}')
+                continue
+            publisher.publish(payload)
+    finally:
+        try:
+            node.destroy_subscription(keyboard_subscription)
+        except Exception:
+            pass
+        ros_manager.shutdown()
+
+
+class ROSProcessBridge:
+    def __init__(
+        self,
+        node_name: str,
+        robot_config: dict,
+        start_method: str = 'spawn',
+    ):
+        self.node_name = node_name
+        self.robot_config = robot_config
+        self.mp_context = mp.get_context(start_method)
+        self.command_queue = self.mp_context.Queue()
+        self.control_goal_queue = self.mp_context.Queue(maxsize=1)
+        self.keyboard_queue = self.mp_context.Queue(maxsize=1)
+        self.stop_event = self.mp_context.Event()
+        self.process = None
+
+    def start(self):
+        if self.process is not None and self.process.is_alive():
+            return
+        self.stop_event.clear()
+        self.process = self.mp_context.Process(
+            target=_ros_bridge_worker,
+            args=(
+                self.node_name,
+                self.robot_config,
+                self.command_queue,
+                self.control_goal_queue,
+                self.keyboard_queue,
+                self.stop_event,
+            ),
+            daemon=True,
+        )
+        self.process.start()
+
+    def is_alive(self) -> bool:
+        return self.process is not None and self.process.is_alive()
+
+    def _publish(self, channel: str, payload: Any):
+        self.command_queue.put((channel, payload))
+
+    def publish_state(self, payload: dict):
+        self._publish('state', payload)
+
+    def publish_lower_body_policy_status(self, payload: dict):
+        self._publish('lower_body_policy_status', payload)
+
+    def publish_joint_safety_status(self, payload: dict):
+        self._publish('joint_safety_status', payload)
+
+    def publish_keyboard_listener_key(self, key: str):
+        self._publish('keyboard_listener_key', key)
+
+    def get_latest_control_goal(self) -> Optional[dict]:
+        latest = None
+        try:
+            while True:
+                latest = self.control_goal_queue.get_nowait()
+        except queue.Empty:
+            return latest
+
+    def get_latest_keyboard_key(self) -> Optional[str]:
+        latest = None
+        try:
+            while True:
+                latest = self.keyboard_queue.get_nowait()
+        except queue.Empty:
+            return latest
+
+    def sleep_to_rate(self, loop_start_time: float, frequency: float):
+        remaining = (1.0 / frequency) - (time.monotonic() - loop_start_time)
+        if remaining > 0:
+            time.sleep(remaining)
+
+    def close(self):
+        self.stop_event.set()
+        self.command_queue.put(('shutdown', None))
+        if self.process is not None and self.process.is_alive():
+            self.process.join(timeout=5)
+            if self.process.is_alive():
+                self.process.terminate()
+                self.process.join(timeout=2)

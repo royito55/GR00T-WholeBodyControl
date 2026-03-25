@@ -10,13 +10,13 @@ from unitree_sdk2py.idl.unitree_hg.msg.dds_ import (
     HandState_,
     IMUState_,
     LowState_ as LowState_hg,
-    OdoState_,
 )
 
 
 class BodyStateProcessor:
     def __init__(self, config):
         self.config = config
+        self.debug_lowlevel_io = self.config.get("debug_lowlevel_io", False)
 
         # Enter debug mode for real robot
         if self.config["ENV_TYPE"] == "real":
@@ -49,6 +49,8 @@ class BodyStateProcessor:
 
             # Subscribe to odo state (only available in simulation)
             if self.config["ENV_TYPE"] == "sim":
+                from unitree_sdk2py.idl.unitree_hg.msg.dds_ import OdoState_
+
                 self.odo_state_subscriber = ChannelSubscriber("rt/odostate", OdoState_)
                 self.odo_state_subscriber.Init(None, 0)
         else:
@@ -68,13 +70,20 @@ class BodyStateProcessor:
         self.robot_low_state = None
         self.secondary_imu_state = None
         self.odo_state = None
+        self._debug_last_missing_log_time = 0.0
+        self._debug_last_received_log_time = 0.0
+        self._debug_receive_count = 0
+        self._debug_first_packet_logged = False
 
     def _prepare_low_state(self) -> np.ndarray:
         self.robot_low_state = self.robot_lowstate_subscriber.Read()
         self.secondary_imu_state = self.secondary_imu_subscriber.Read()
 
         if not self.robot_low_state:
-            print("No low state received")
+            now = time.monotonic()
+            if self.debug_lowlevel_io and now - self._debug_last_missing_log_time > 1.0:
+                print("[BodyStateProcessor] No rt/lowstate received yet")
+                self._debug_last_missing_log_time = now
             return
         imu_state = self.robot_low_state.imu_state
 
@@ -91,8 +100,38 @@ class BodyStateProcessor:
         self.dq[3:6] = imu_state.gyroscope
         self.ddq[0:3] = imu_state.accelerometer
         unitree_joint_state = self.robot_low_state.motor_state
+        if self.secondary_imu_state is None:
+            now = time.monotonic()
+            if self.debug_lowlevel_io and now - self._debug_last_missing_log_time > 1.0:
+                print("[BodyStateProcessor] No rt/secondary_imu received yet")
+                self._debug_last_missing_log_time = now
+            return
+
         self.torso_quat = self.secondary_imu_state.quaternion
         self.torso_ang_vel = self.secondary_imu_state.gyroscope
+
+        self._debug_receive_count += 1
+        now = time.monotonic()
+        if self.debug_lowlevel_io:
+            if not self._debug_first_packet_logged:
+                first_joint = self.robot_low_state.motor_state[self.config["JOINT2MOTOR"][0]]
+                print(
+                    "[BodyStateProcessor] First lowstate packet received: "
+                    f"mode_machine={getattr(self.robot_low_state, 'mode_machine', 'n/a')}, "
+                    f"imu_quat={np.array(imu_state.quaternion)}, "
+                    f"joint0_q={first_joint.q:.4f}, joint0_dq={first_joint.dq:.4f}"
+                )
+                self._debug_first_packet_logged = True
+                self._debug_last_received_log_time = now
+            elif now - self._debug_last_received_log_time > 2.0:
+                first_joint = self.robot_low_state.motor_state[self.config["JOINT2MOTOR"][0]]
+                print(
+                    "[BodyStateProcessor] lowstate stream alive: "
+                    f"count={self._debug_receive_count}, "
+                    f"joint0_q={first_joint.q:.4f}, joint0_dq={first_joint.dq:.4f}, "
+                    f"gyro={np.array(imu_state.gyroscope)}"
+                )
+                self._debug_last_received_log_time = now
 
         for i in range(self.num_dof):
             self.q[7 + i] = unitree_joint_state[self.config["JOINT2MOTOR"][i]].q
