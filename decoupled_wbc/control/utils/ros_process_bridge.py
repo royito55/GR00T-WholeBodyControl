@@ -30,6 +30,8 @@ def _ros_bridge_worker(
     control_goal_queue,
     keyboard_queue,
     stop_event,
+    zmq_control_goal_host: Optional[str] = None,
+    zmq_control_goal_port: int = 5556,
 ):
     from std_msgs.msg import String as RosStringMsg
 
@@ -50,7 +52,24 @@ def _ros_bridge_worker(
         'joint_safety_status': ROSMsgPublisher(JOINT_SAFETY_STATUS_TOPIC),
     }
     keyboard_listener_pub = node.create_publisher(RosStringMsg, KEYBOARD_LISTENER_TOPIC_NAME, 1)
-    control_goal_subscriber = ROSMsgSubscriber(CONTROL_GOAL_TOPIC)
+
+    if zmq_control_goal_host:
+        import msgpack
+        import msgpack_numpy as mnp
+        import zmq
+
+        _zmq_context = zmq.Context()
+        _zmq_sub = _zmq_context.socket(zmq.SUB)
+        _zmq_sub.setsockopt(zmq.SUBSCRIBE, b"")
+        _zmq_sub.setsockopt(zmq.RCVTIMEO, 10)
+        _zmq_sub.setsockopt(zmq.LINGER, 0)
+        _zmq_sub.connect(f"tcp://{zmq_control_goal_host}:{zmq_control_goal_port}")
+        print(f"Receiving control goals via ZMQ from tcp://{zmq_control_goal_host}:{zmq_control_goal_port}")
+        control_goal_subscriber = None
+    else:
+        _zmq_context = None
+        _zmq_sub = None
+        control_goal_subscriber = ROSMsgSubscriber(CONTROL_GOAL_TOPIC)
 
     def keyboard_input_callback(msg: RosStringMsg):
         _drain_latest(keyboard_queue, msg.data)
@@ -61,9 +80,17 @@ def _ros_bridge_worker(
 
     try:
         while ros_manager.ok() and not stop_event.is_set():
-            upper_body_cmd = control_goal_subscriber.get_msg()
-            if upper_body_cmd is not None:
-                _drain_latest(control_goal_queue, upper_body_cmd)
+            if _zmq_sub is not None:
+                try:
+                    payload = _zmq_sub.recv()
+                    upper_body_cmd = msgpack.unpackb(payload, object_hook=mnp.decode)
+                    _drain_latest(control_goal_queue, upper_body_cmd)
+                except zmq.Again:
+                    pass
+            else:
+                upper_body_cmd = control_goal_subscriber.get_msg()
+                if upper_body_cmd is not None:
+                    _drain_latest(control_goal_queue, upper_body_cmd)
 
             try:
                 command, payload = command_queue.get(timeout=0.01)
@@ -86,6 +113,9 @@ def _ros_bridge_worker(
             node.destroy_subscription(keyboard_subscription)
         except Exception:
             pass
+        if _zmq_sub is not None:
+            _zmq_sub.close()
+            _zmq_context.term()
         ros_manager.shutdown()
 
 
@@ -95,9 +125,13 @@ class ROSProcessBridge:
         node_name: str,
         robot_config: dict,
         start_method: str = 'spawn',
+        zmq_control_goal_host: Optional[str] = None,
+        zmq_control_goal_port: int = 5556,
     ):
         self.node_name = node_name
         self.robot_config = robot_config
+        self.zmq_control_goal_host = zmq_control_goal_host
+        self.zmq_control_goal_port = zmq_control_goal_port
         self.mp_context = mp.get_context(start_method)
         self.command_queue = self.mp_context.Queue()
         self.control_goal_queue = self.mp_context.Queue(maxsize=1)
@@ -118,6 +152,8 @@ class ROSProcessBridge:
                 self.control_goal_queue,
                 self.keyboard_queue,
                 self.stop_event,
+                self.zmq_control_goal_host,
+                self.zmq_control_goal_port,
             ),
             daemon=True,
         )
