@@ -1,3 +1,4 @@
+import os
 import multiprocessing as mp
 import queue
 import time
@@ -33,6 +34,10 @@ def _ros_bridge_worker(
     zmq_control_goal_host: Optional[str] = None,
     zmq_control_goal_port: int = 5556,
 ):
+    debug_zmq = os.getenv("GR00T_DEBUG_ZMQ", "").lower() in {"1", "true", "yes"}
+    last_debug_log_time = 0.0
+    last_zmq_msg_time = None
+
     from std_msgs.msg import String as RosStringMsg
 
     from decoupled_wbc.control.utils.ros_utils import (
@@ -85,8 +90,32 @@ def _ros_bridge_worker(
                     payload = _zmq_sub.recv()
                     upper_body_cmd = msgpack.unpackb(payload, object_hook=mnp.decode)
                     _drain_latest(control_goal_queue, upper_body_cmd)
+                    last_zmq_msg_time = time.monotonic()
+                    if debug_zmq:
+                        now = time.monotonic()
+                        if now - last_debug_log_time >= 1.0:
+                            last_debug_log_time = now
+                            msg_ts = upper_body_cmd.get("timestamp")
+                            age_ms = None if msg_ts is None else (time.monotonic() - msg_ts) * 1000.0
+                            navigate_cmd = upper_body_cmd.get("navigate_cmd")
+                            base_height = upper_body_cmd.get("base_height_command")
+                            wrist_pose = upper_body_cmd.get("wrist_pose")
+                            target_upper = upper_body_cmd.get("target_upper_body_pose")
+                            age_str = "unknown" if age_ms is None else f"{age_ms:.1f}"
+                            print(
+                                "[ZMQ DEBUG] "
+                                f"recv age_ms={age_str} "
+                                f"navigate_cmd={navigate_cmd} "
+                                f"base_height={base_height} "
+                                f"wrist_pose_len={0 if wrist_pose is None else len(wrist_pose)} "
+                                f"target_upper_len={0 if target_upper is None else len(target_upper)}"
+                            )
                 except zmq.Again:
-                    pass
+                    if debug_zmq and last_zmq_msg_time is None:
+                        now = time.monotonic()
+                        if now - last_debug_log_time >= 1.0:
+                            last_debug_log_time = now
+                            print("[ZMQ DEBUG] waiting for first control goal over ZMQ")
             else:
                 upper_body_cmd = control_goal_subscriber.get_msg()
                 if upper_body_cmd is not None:
