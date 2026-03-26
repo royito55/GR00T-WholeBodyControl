@@ -144,6 +144,21 @@ def main(config: ControlLoopConfig):
                     if upper_body_cmd:
                         wbc_goal = upper_body_cmd.copy()
                         last_teleop_cmd = upper_body_cmd.copy()
+
+                        # Remote teleop commands may come from another machine, so any
+                        # target_time based on that machine's monotonic clock is invalid here.
+                        # Re-anchor interpolation targets onto the local control-loop clock.
+                        if config.zmq_control_goal_host:
+                            remote_target_time = wbc_goal.get("target_time")
+                            if isinstance(remote_target_time, list):
+                                step_dt = 1.0 / config.control_frequency
+                                wbc_goal["target_time"] = [
+                                    t_now + step_dt * (idx + 1)
+                                    for idx, _ in enumerate(remote_target_time)
+                                ]
+                            else:
+                                wbc_goal["target_time"] = t_now + (1.0 / config.control_frequency)
+
                         if debug_zmq and (t_now - last_debug_log_time) >= 1.0:
                             last_debug_log_time = t_now
                             print(
