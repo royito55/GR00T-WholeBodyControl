@@ -14,6 +14,14 @@ from decoupled_wbc.control.main.constants import (
 )
 from decoupled_wbc.control.utils.keyboard_dispatcher import KEYBOARD_LISTENER_TOPIC_NAME
 
+ONE_SHOT_CONTROL_GOAL_KEYS = (
+    "toggle_policy_action",
+    "toggle_activation",
+    "toggle_data_collection",
+    "toggle_data_abort",
+    "reset_env_and_policy",
+)
+
 
 def _drain_latest(mp_queue, value):
     try:
@@ -21,6 +29,23 @@ def _drain_latest(mp_queue, value):
             mp_queue.get_nowait()
     except queue.Empty:
         pass
+    mp_queue.put(value)
+
+
+def _drain_latest_control_goal(mp_queue, value):
+    latest = None
+    try:
+        while True:
+            latest = mp_queue.get_nowait()
+    except queue.Empty:
+        pass
+
+    if isinstance(latest, dict) and isinstance(value, dict):
+        merged = value.copy()
+        for key in ONE_SHOT_CONTROL_GOAL_KEYS:
+            merged[key] = bool(latest.get(key, False) or value.get(key, False))
+        value = merged
+
     mp_queue.put(value)
 
 
@@ -89,7 +114,7 @@ def _ros_bridge_worker(
                 try:
                     payload = _zmq_sub.recv()
                     upper_body_cmd = msgpack.unpackb(payload, object_hook=mnp.decode)
-                    _drain_latest(control_goal_queue, upper_body_cmd)
+                    _drain_latest_control_goal(control_goal_queue, upper_body_cmd)
                     last_zmq_msg_time = time.monotonic()
                     if debug_zmq:
                         now = time.monotonic()
@@ -101,12 +126,16 @@ def _ros_bridge_worker(
                             base_height = upper_body_cmd.get("base_height_command")
                             wrist_pose = upper_body_cmd.get("wrist_pose")
                             target_upper = upper_body_cmd.get("target_upper_body_pose")
+                            toggle_data_collection = upper_body_cmd.get("toggle_data_collection")
+                            toggle_data_abort = upper_body_cmd.get("toggle_data_abort")
                             age_str = "unknown" if age_ms is None else f"{age_ms:.1f}"
                             print(
                                 "[ZMQ DEBUG] "
                                 f"recv age_ms={age_str} "
                                 f"navigate_cmd={navigate_cmd} "
                                 f"base_height={base_height} "
+                                f"toggle_data_collection={toggle_data_collection} "
+                                f"toggle_data_abort={toggle_data_abort} "
                                 f"wrist_pose_len={0 if wrist_pose is None else len(wrist_pose)} "
                                 f"target_upper_len={0 if target_upper is None else len(target_upper)}"
                             )
@@ -119,7 +148,7 @@ def _ros_bridge_worker(
             else:
                 upper_body_cmd = control_goal_subscriber.get_msg()
                 if upper_body_cmd is not None:
-                    _drain_latest(control_goal_queue, upper_body_cmd)
+                    _drain_latest_control_goal(control_goal_queue, upper_body_cmd)
 
             try:
                 command, payload = command_queue.get(timeout=0.01)

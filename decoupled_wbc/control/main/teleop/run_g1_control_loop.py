@@ -166,7 +166,9 @@ def main(config: ControlLoopConfig):
                                 f"consumed navigate_cmd={wbc_goal.get('navigate_cmd')} "
                                 f"base_height={wbc_goal.get('base_height_command')} "
                                 f"toggle_activation={wbc_goal.get('toggle_activation')} "
-                                f"toggle_policy_action={wbc_goal.get('toggle_policy_action')}"
+                                f"toggle_policy_action={wbc_goal.get('toggle_policy_action')} "
+                                f"toggle_data_collection={wbc_goal.get('toggle_data_collection')} "
+                                f"toggle_data_abort={wbc_goal.get('toggle_data_abort')}"
                             )
                         if config.ik_indicator:
                             env.set_ik_indicator(upper_body_cmd)

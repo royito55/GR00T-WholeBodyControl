@@ -135,7 +135,10 @@ class PicoStreamer(BaseStreamer):
             f"right_js={np.round(pico_data['right_joystick'], 3).tolist()} "
             f"lt={pico_data['left_trigger']:.2f} rt={pico_data['right_trigger']:.2f} "
             f"lg={pico_data['left_grip']:.2f} rg={pico_data['right_grip']:.2f} "
+            f"A={int(pico_data['A'])} B={int(pico_data['B'])} "
+            f"X={int(pico_data['X'])} Y={int(pico_data['Y'])} "
             f"menuL={int(pico_data['left_menu_button'])} menuR={int(pico_data['right_menu_button'])} "
+            f"axisL={int(pico_data['left_axis_click'])} axisR={int(pico_data['right_axis_click'])} "
             f"hands=({int(pico_data['left_hand_tracking_state'] is not None)},"
             f"{int(pico_data['right_hand_tracking_state'] is not None)}) "
             f"body_tracking={int(body_tracking is not None)} "
@@ -206,7 +209,13 @@ class PicoStreamer(BaseStreamer):
             toggle_data_abort = False
         self.toggle_data_abort_last = toggle_data_abort_tmp
 
-        # print(f"toggle_data_collection: {toggle_data_collection}, toggle_data_abort: {toggle_data_abort}")
+        if self.debug_pico and (toggle_data_collection or toggle_data_abort):
+            print(
+                "[PICO DEBUG] "
+                f"recording_toggle={int(toggle_data_collection)} "
+                f"abort_toggle={int(toggle_data_abort)} "
+                f"A={int(pico_data['A'])} B={int(pico_data['B'])}"
+            )
 
         return StreamerOutput(
             ik_data={
