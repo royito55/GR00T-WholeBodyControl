@@ -202,6 +202,12 @@ source .venv_teleop/bin/activate
 ```bash
 python decoupled_wbc/control/main/teleop/run_g1_control_loop.py --interface real --robot-variant g1_23dof_compat --no-with-hands
 ```
+If `run_teleop_policy_loop.py` is run from a different PC:
+```bash
+python decoupled_wbc/control/main/teleop/run_g1_control_loop.py --interface real --robot-variant g1_23dof_compat --no-with-hands --zmq-control-goal-host
+  <OTHER_MACHINE_IP> --zmq-control-goal-port 5556
+```
+
 * Wait for robot to set arms at 90º, set feet on ground, press `]`
 ## Camera driver
 ```bash

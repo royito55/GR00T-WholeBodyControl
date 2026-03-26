@@ -1,3 +1,4 @@
+import os
 from copy import deepcopy
 import time
 
@@ -64,6 +65,8 @@ class BridgeKeyboardDispatcher:
 
 
 def main(config: ControlLoopConfig):
+    debug_zmq = os.getenv("GR00T_DEBUG_ZMQ", "").lower() in {"1", "true", "yes"}
+    last_debug_log_time = 0.0
     ros_bridge = None
     env = None
     dispatcher = None
@@ -141,6 +144,15 @@ def main(config: ControlLoopConfig):
                     if upper_body_cmd:
                         wbc_goal = upper_body_cmd.copy()
                         last_teleop_cmd = upper_body_cmd.copy()
+                        if debug_zmq and (t_now - last_debug_log_time) >= 1.0:
+                            last_debug_log_time = t_now
+                            print(
+                                "[CONTROL DEBUG] "
+                                f"consumed navigate_cmd={wbc_goal.get('navigate_cmd')} "
+                                f"base_height={wbc_goal.get('base_height_command')} "
+                                f"toggle_activation={wbc_goal.get('toggle_activation')} "
+                                f"toggle_policy_action={wbc_goal.get('toggle_policy_action')}"
+                            )
                         if config.ik_indicator:
                             env.set_ik_indicator(upper_body_cmd)
                     # Send goal to policy

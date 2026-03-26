@@ -1,3 +1,4 @@
+import os
 import subprocess
 import time
 
@@ -18,6 +19,8 @@ R_HEADSET_TO_WORLD = np.array(
 
 class PicoStreamer(BaseStreamer):
     def __init__(self):
+        self.debug_pico = os.getenv("GR00T_DEBUG_PICO", "").lower() in {"1", "true", "yes"}
+        self._last_debug_log_time = 0.0
         self.xr_client = XrClient()
         self.run_pico_service()
 
@@ -103,7 +106,41 @@ class PicoStreamer(BaseStreamer):
         # Get the body tracking data
         pico_data["body_tracking_data"] = self.xr_client.get_body_tracking_data()
 
+        self._maybe_log_debug(pico_data)
+
         return pico_data
+
+    def _maybe_log_debug(self, pico_data):
+        if not self.debug_pico:
+            return
+
+        now = time.monotonic()
+        if now - self._last_debug_log_time < 1.0:
+            return
+        self._last_debug_log_time = now
+
+        left_pose = np.array(pico_data["left_pose"])
+        right_pose = np.array(pico_data["right_pose"])
+        head_pose = np.array(pico_data["head_pose"])
+        body_tracking = pico_data["body_tracking_data"]
+        motion_trackers = pico_data["motion_tracker_data"]
+
+        print(
+            "[PICO DEBUG] "
+            f"ts_ns={pico_data['timestamp']} "
+            f"head_xyz={np.round(head_pose[:3], 3).tolist()} "
+            f"left_xyz={np.round(left_pose[:3], 3).tolist()} "
+            f"right_xyz={np.round(right_pose[:3], 3).tolist()} "
+            f"left_js={np.round(pico_data['left_joystick'], 3).tolist()} "
+            f"right_js={np.round(pico_data['right_joystick'], 3).tolist()} "
+            f"lt={pico_data['left_trigger']:.2f} rt={pico_data['right_trigger']:.2f} "
+            f"lg={pico_data['left_grip']:.2f} rg={pico_data['right_grip']:.2f} "
+            f"menuL={int(pico_data['left_menu_button'])} menuR={int(pico_data['right_menu_button'])} "
+            f"hands=({int(pico_data['left_hand_tracking_state'] is not None)},"
+            f"{int(pico_data['right_hand_tracking_state'] is not None)}) "
+            f"body_tracking={int(body_tracking is not None)} "
+            f"trackers={len(motion_trackers)}"
+        )
 
     def _generate_unified_raw_data(self, pico_data):
         # Get controller position and orientation in z up world frame
