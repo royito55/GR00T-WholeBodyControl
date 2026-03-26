@@ -60,6 +60,7 @@ def _ros_bridge_worker(
     zmq_control_goal_port: int = 5556,
 ):
     debug_zmq = os.getenv("GR00T_DEBUG_ZMQ", "").lower() in {"1", "true", "yes"}
+    debug_zmq_verbose = os.getenv("GR00T_DEBUG_ZMQ_VERBOSE", "").lower() in {"1", "true", "yes"}
     last_debug_log_time = 0.0
     last_zmq_msg_time = None
 
@@ -117,6 +118,15 @@ def _ros_bridge_worker(
                     _drain_latest_control_goal(control_goal_queue, upper_body_cmd)
                     last_zmq_msg_time = time.monotonic()
                     if debug_zmq:
+                        toggle_data_collection = upper_body_cmd.get("toggle_data_collection")
+                        toggle_data_abort = upper_body_cmd.get("toggle_data_abort")
+                        if toggle_data_collection or toggle_data_abort:
+                            print(
+                                "[ZMQ RECORD] "
+                                f"toggle_data_collection={bool(toggle_data_collection)} "
+                                f"toggle_data_abort={bool(toggle_data_abort)}"
+                            )
+                    if debug_zmq_verbose:
                         now = time.monotonic()
                         if now - last_debug_log_time >= 1.0:
                             last_debug_log_time = now
@@ -130,7 +140,7 @@ def _ros_bridge_worker(
                             toggle_data_abort = upper_body_cmd.get("toggle_data_abort")
                             age_str = "unknown" if age_ms is None else f"{age_ms:.1f}"
                             print(
-                                "[ZMQ DEBUG] "
+                                "[ZMQ DEBUG VERBOSE] "
                                 f"recv age_ms={age_str} "
                                 f"navigate_cmd={navigate_cmd} "
                                 f"base_height={base_height} "
@@ -140,11 +150,11 @@ def _ros_bridge_worker(
                                 f"target_upper_len={0 if target_upper is None else len(target_upper)}"
                             )
                 except zmq.Again:
-                    if debug_zmq and last_zmq_msg_time is None:
+                    if debug_zmq_verbose and last_zmq_msg_time is None:
                         now = time.monotonic()
                         if now - last_debug_log_time >= 1.0:
                             last_debug_log_time = now
-                            print("[ZMQ DEBUG] waiting for first control goal over ZMQ")
+                            print("[ZMQ DEBUG VERBOSE] waiting for first control goal over ZMQ")
             else:
                 upper_body_cmd = control_goal_subscriber.get_msg()
                 if upper_body_cmd is not None:

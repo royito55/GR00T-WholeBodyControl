@@ -20,6 +20,11 @@ R_HEADSET_TO_WORLD = np.array(
 class PicoStreamer(BaseStreamer):
     def __init__(self):
         self.debug_pico = os.getenv("GR00T_DEBUG_PICO", "").lower() in {"1", "true", "yes"}
+        self.debug_pico_verbose = os.getenv("GR00T_DEBUG_PICO_VERBOSE", "").lower() in {
+            "1",
+            "true",
+            "yes",
+        }
         self._last_debug_log_time = 0.0
         self.xr_client = XrClient()
         self.run_pico_service()
@@ -111,7 +116,7 @@ class PicoStreamer(BaseStreamer):
         return pico_data
 
     def _maybe_log_debug(self, pico_data):
-        if not self.debug_pico:
+        if not self.debug_pico_verbose:
             return
 
         now = time.monotonic()
@@ -211,10 +216,11 @@ class PicoStreamer(BaseStreamer):
 
         if self.debug_pico and (toggle_data_collection or toggle_data_abort):
             print(
-                "[PICO DEBUG] "
-                f"recording_toggle={int(toggle_data_collection)} "
-                f"abort_toggle={int(toggle_data_abort)} "
-                f"A={int(pico_data['A'])} B={int(pico_data['B'])}"
+                "[PICO RECORD] "
+                f"A={int(pico_data['A'])} "
+                f"B={int(pico_data['B'])} "
+                f"toggle_data_collection={int(toggle_data_collection)} "
+                f"toggle_data_abort={int(toggle_data_abort)}"
             )
 
         return StreamerOutput(
