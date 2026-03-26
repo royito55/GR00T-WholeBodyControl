@@ -57,10 +57,6 @@ class TimingThresholdMonitor:
             self.last_failure_time = time.monotonic()
 
         if self.is_threshold_exceeded():
-            print(
-                f"Time delta exception: {self.failure_count} failures in {self.reset_timeout_sec} seconds"
-                f", time delta: {time_delta}"
-            )
             if self.raise_exception:
                 raise TimeDeltaException(self.failure_count, self.reset_timeout_sec)
 
@@ -110,10 +106,8 @@ class Gr00tDataCollector:
 
         self.telemetry = Telemetry(window_size=100)
         self.timing_threshold_monitor = TimingThresholdMonitor()
-        self._last_missed_timing_log_time = 0.0
-        self._missed_timing_log_interval_sec = 5.0
-
-        print(f"Recording to {self.data_exporter.meta.root}")
+        self._last_waiting_log_time = 0.0
+        self._waiting_log_interval_sec = 5.0
 
     @property
     def current_episode_index(self):
@@ -150,12 +144,15 @@ class Gr00tDataCollector:
         t_start = time.monotonic()
 
         if self.latest_proprio_msg is None or self.latest_image_msg is None:
-            self._print_and_say(
-                f"Waiting for message. "
-                f"Avail msg: proprio {self.latest_proprio_msg is not None} | "
-                f"image {self.latest_image_msg is not None}",
-                say=False,
-            )
+            now = time.monotonic()
+            if now - self._last_waiting_log_time >= self._waiting_log_interval_sec:
+                self._last_waiting_log_time = now
+                self._print_and_say(
+                    f"Waiting for message. "
+                    f"Avail msg: proprio {self.latest_proprio_msg is not None} | "
+                    f"image {self.latest_image_msg is not None}",
+                    say=False,
+                )
             return False
 
         if self._episode_state.get_state() == self._episode_state.RECORDING:
@@ -167,8 +164,6 @@ class Gr00tDataCollector:
                 max_time_delta = max(max_time_delta, time_delta)
 
             self.timing_threshold_monitor.log_time_delta(max_time_delta)
-            if (self.timing_threshold_monitor.failure_count + 1) % 100 == 0:
-                self._print_and_say("Image state delta too high, please discard data")
 
             frame_data = {
                 "observation.state": self.latest_proprio_msg["q"],
@@ -204,14 +199,6 @@ class Gr00tDataCollector:
                     frame_data[feature_name] = images[image_key]
 
             self.data_exporter.add_frame(frame_data)
-
-        t_end = time.monotonic()
-        if t_end - t_start > (1 / self.frequency):
-            now = time.monotonic()
-            if now - self._last_missed_timing_log_time >= self._missed_timing_log_interval_sec:
-                self._last_missed_timing_log_time = now
-                print(f"DataExporter Missed: {t_end - t_start} sec")
-
         if self._episode_state.get_state() == self._episode_state.NEED_TO_SAVE:
             self.data_exporter.save_episode()
             self.timing_threshold_monitor.reset()
@@ -263,20 +250,6 @@ class Gr00tDataCollector:
                     end_time = time.monotonic()
 
                 self.rate.sleep()
-
-                # Log timing information if we missed our target frequency
-                if (end_time - t_start) > (1 / self.frequency):
-                    now = time.monotonic()
-                    if (
-                        now - self._last_missed_timing_log_time
-                        >= self._missed_timing_log_interval_sec
-                    ):
-                        self._last_missed_timing_log_time = now
-                        self.telemetry.log_timing_info(
-                            context="Data Exporter Loop Missed", threshold=0.001
-                        )
-                    else:
-                        self.telemetry.clear_last_timing()
 
         except KeyboardInterrupt:
             print("Data exporter terminated by user")
