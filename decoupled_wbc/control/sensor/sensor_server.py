@@ -92,8 +92,12 @@ class SensorClient:
         self.socket.close()
         self.context.term()
 
-    def receive_message(self):
-        packed = self.socket.recv()
+    def receive_message(self, non_blocking: bool = False):
+        flags = zmq.NOBLOCK if non_blocking else 0
+        try:
+            packed = self.socket.recv(flags=flags)
+        except zmq.Again:
+            return None
         return msgpack.unpackb(packed, object_hook=m.decode)
 
 

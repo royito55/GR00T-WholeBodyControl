@@ -293,15 +293,15 @@ class Gr00tDataCollector:
                         if msg is not None:
                             self.latest_proprio_msg = msg
 
-                    # 2. poll image msg
+                    # 2. check keyboard input first so remote A/B toggles are not delayed by camera polling
+                    with self.telemetry.timer("check_keyboard"):
+                        self._check_keyboard_input()
+
+                    # 3. poll image msg
                     with self.telemetry.timer("poll_image"):
                         msg = self._image_subscriber.read()
                         if msg is not None:
                             self.latest_image_msg = msg
-
-                    # 3. check keyboard input
-                    with self.telemetry.timer("check_keyboard"):
-                        self._check_keyboard_input()
 
                     # 4. add frame
                     with self.telemetry.timer("add_frame"):

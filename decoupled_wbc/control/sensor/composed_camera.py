@@ -384,7 +384,7 @@ class ComposedCameraClientSensor(Sensor, SensorClient):
 
     def read(self, **kwargs) -> Optional[Dict[str, Any]]:
         self._start_time = time.time()
-        message = self.receive_message()
+        message = self.receive_message(non_blocking=True)
         if not message:
             return None
         self.idx += 1
