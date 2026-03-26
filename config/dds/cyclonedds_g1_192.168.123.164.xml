@@ -8,12 +8,9 @@
       </Interfaces>
     </General>
     <Discovery>
-      <Peers AddLocalhost="false">
+      <Peers>
         <Peer Address="192.168.123.222"/>
       </Peers>
     </Discovery>
-    <Internal>
-      <DontRoute>true</DontRoute>
-    </Internal>
   </Domain>
 </CycloneDDS>
