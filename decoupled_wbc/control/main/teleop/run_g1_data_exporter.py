@@ -13,7 +13,7 @@ from decoupled_wbc.control.robot_model.instantiation import g1
 from decoupled_wbc.control.sensor.composed_camera import ComposedCameraClientSensor
 from decoupled_wbc.control.utils.episode_state import EpisodeState
 from decoupled_wbc.control.utils.keyboard_dispatcher import KeyboardListenerSubscriber
-from decoupled_wbc.control.utils.ros_utils import ROSMsgSubscriber, ROSServiceClient
+from decoupled_wbc.control.utils.ros_utils import ROSManager, ROSMsgSubscriber, ROSServiceClient
 from decoupled_wbc.control.utils.telemetry import Telemetry
 from decoupled_wbc.control.utils.text_to_speech import TextToSpeech
 from decoupled_wbc.data.constants import BUCKET_BASE_PATH
@@ -87,9 +87,11 @@ class Gr00tDataCollector:
 
         self.node = node
 
-        thread = threading.Thread(target=rclpy.spin, args=(self.node,), daemon=True)
-        thread.start()
-        time.sleep(0.5)
+        executor = rclpy.get_global_executor()
+        if self.node not in executor.get_nodes():
+            thread = threading.Thread(target=rclpy.spin, args=(self.node,), daemon=True)
+            thread.start()
+            time.sleep(0.5)
 
         self._episode_state = EpisodeState()
         self._keyboard_listener = KeyboardListenerSubscriber()
@@ -108,6 +110,9 @@ class Gr00tDataCollector:
         self.timing_threshold_monitor = TimingThresholdMonitor()
         self._last_waiting_log_time = 0.0
         self._waiting_log_interval_sec = 5.0
+        self._last_keyboard_key = None
+        self._last_keyboard_key_time = 0.0
+        self._keyboard_debounce_sec = 0.35
 
     @property
     def current_episode_index(self):
@@ -122,6 +127,19 @@ class Gr00tDataCollector:
 
     def _check_keyboard_input(self):
         key = self._keyboard_listener.read_msg()
+        if key is None:
+            return
+
+        now = time.monotonic()
+        if (
+            key == self._last_keyboard_key
+            and (now - self._last_keyboard_key_time) < self._keyboard_debounce_sec
+        ):
+            return
+
+        self._last_keyboard_key = key
+        self._last_keyboard_key_time = now
+
         if key == "c":
             prev_state = self._episode_state.get_state()
             self._episode_state.change_state()
@@ -264,9 +282,8 @@ class Gr00tDataCollector:
 
 
 def main(config: DataExporterConfig):
-
-    rclpy.init(args=None)
-    node = rclpy.create_node("data_exporter")
+    ros_manager = ROSManager(node_name="data_exporter")
+    node = ros_manager.node
 
     waist_location = "lower_and_upper_body" if config.enable_waist else "lower_body"
     g1_rm = g1.instantiate_g1_robot_model(
