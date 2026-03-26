@@ -110,6 +110,8 @@ class Gr00tDataCollector:
 
         self.telemetry = Telemetry(window_size=100)
         self.timing_threshold_monitor = TimingThresholdMonitor()
+        self._last_missed_timing_log_time = 0.0
+        self._missed_timing_log_interval_sec = 5.0
 
         print(f"Recording to {self.data_exporter.meta.root}")
 
@@ -127,7 +129,10 @@ class Gr00tDataCollector:
     def _check_keyboard_input(self):
         key = self._keyboard_listener.read_msg()
         if key == "c":
+            prev_state = self._episode_state.get_state()
             self._episode_state.change_state()
+            new_state = self._episode_state.get_state()
+            self._print_and_say(f"[EXPORTER] received 'c': {prev_state} -> {new_state}", say=False)
             if self._episode_state.get_state() == self._episode_state.RECORDING:
                 self._print_and_say(f"Started recording {self.current_episode_index}")
             elif self._episode_state.get_state() == self._episode_state.NEED_TO_SAVE:
@@ -136,6 +141,7 @@ class Gr00tDataCollector:
                 self._print_and_say("Saved episode and back to idle state")
         elif key == "x":
             if self._episode_state.get_state() == self._episode_state.RECORDING:
+                self._print_and_say("[EXPORTER] received 'x': recording -> discarded", say=False)
                 self.data_exporter.save_episode_as_discarded()
                 self._episode_state.reset_state()
                 self._print_and_say("Discarded episode")
@@ -201,7 +207,10 @@ class Gr00tDataCollector:
 
         t_end = time.monotonic()
         if t_end - t_start > (1 / self.frequency):
-            print(f"DataExporter Missed: {t_end - t_start} sec")
+            now = time.monotonic()
+            if now - self._last_missed_timing_log_time >= self._missed_timing_log_interval_sec:
+                self._last_missed_timing_log_time = now
+                print(f"DataExporter Missed: {t_end - t_start} sec")
 
         if self._episode_state.get_state() == self._episode_state.NEED_TO_SAVE:
             self.data_exporter.save_episode()
@@ -257,9 +266,17 @@ class Gr00tDataCollector:
 
                 # Log timing information if we missed our target frequency
                 if (end_time - t_start) > (1 / self.frequency):
-                    self.telemetry.log_timing_info(
-                        context="Data Exporter Loop Missed", threshold=0.001
-                    )
+                    now = time.monotonic()
+                    if (
+                        now - self._last_missed_timing_log_time
+                        >= self._missed_timing_log_interval_sec
+                    ):
+                        self._last_missed_timing_log_time = now
+                        self.telemetry.log_timing_info(
+                            context="Data Exporter Loop Missed", threshold=0.001
+                        )
+                    else:
+                        self.telemetry.clear_last_timing()
 
         except KeyboardInterrupt:
             print("Data exporter terminated by user")
