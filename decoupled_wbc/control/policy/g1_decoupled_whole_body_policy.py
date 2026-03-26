@@ -1,3 +1,4 @@
+import os
 import time as time_module
 from typing import Optional
 
@@ -26,6 +27,12 @@ class G1DecoupledWholeBodyPolicy(Policy):
         self.upper_body_policy = upper_body_policy
         self.last_goal_time = time_module.monotonic()
         self.is_in_teleop_mode = False  # Track if lower body is in teleop mode
+        self.debug_lower_body = os.getenv("GR00T_DEBUG_LOWER_BODY", "").lower() in {
+            "1",
+            "true",
+            "yes",
+        }
+        self._last_lower_body_debug_log_time = 0.0
 
     def set_observation(self, observation):
         # Upper body policy is open loop (just interpolation), so we don't need to set the observation
@@ -136,11 +143,26 @@ class G1DecoupledWholeBodyPolicy(Policy):
         lower_body_action = self.lower_body_policy.get_action(
             time, q_arms, base_height_command, torso_orientation_rpy, interpolated_navigate_cmd
         )
+        lower_body_q = lower_body_action["body_action"][0][: len(lower_body_indices)]
+
+        if self.debug_lower_body and hasattr(self.lower_body_policy, "observation"):
+            now = time_module.monotonic()
+            if now - self._last_lower_body_debug_log_time >= 1.0:
+                self._last_lower_body_debug_log_time = now
+                current_lower_body_q = self.lower_body_policy.observation["q"][lower_body_indices]
+                delta = lower_body_q - current_lower_body_q
+                print(
+                    "[LOWER BODY DEBUG] "
+                    f"teleop_mode={self.is_in_teleop_mode} "
+                    f"use_policy_action={getattr(self.lower_body_policy, 'use_policy_action', None)} "
+                    f"nav_cmd={interpolated_navigate_cmd} "
+                    f"base_height={base_height_command} "
+                    f"delta_norm={np.linalg.norm(delta):.4f} "
+                    f"delta_max={np.max(np.abs(delta)):.4f}"
+                )
 
         # If pelvis is both in upper and lower body, lower body policy takes preference
-        q[lower_body_indices] = lower_body_action["body_action"][0][
-            : len(lower_body_indices)
-        ]  # lower body (legs + waist)
+        q[lower_body_indices] = lower_body_q  # lower body (legs + waist)
 
         self.last_action = {"q": q}
 
