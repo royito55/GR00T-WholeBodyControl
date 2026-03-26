@@ -66,6 +66,7 @@ class BridgeKeyboardDispatcher:
 
 def main(config: ControlLoopConfig):
     debug_zmq = os.getenv("GR00T_DEBUG_ZMQ", "").lower() in {"1", "true", "yes"}
+    debug_zmq_verbose = os.getenv("GR00T_DEBUG_ZMQ_VERBOSE", "").lower() in {"1", "true", "yes"}
     last_debug_log_time = 0.0
     ros_bridge = None
     env = None
@@ -159,10 +160,19 @@ def main(config: ControlLoopConfig):
                             else:
                                 wbc_goal["target_time"] = t_now + (1.0 / config.control_frequency)
 
-                        if debug_zmq and (t_now - last_debug_log_time) >= 1.0:
+                        if debug_zmq and (
+                            wbc_goal.get("toggle_data_collection", False)
+                            or wbc_goal.get("toggle_data_abort", False)
+                        ):
+                            print(
+                                "[CONTROL RECORD] "
+                                f"toggle_data_collection={bool(wbc_goal.get('toggle_data_collection', False))} "
+                                f"toggle_data_abort={bool(wbc_goal.get('toggle_data_abort', False))}"
+                            )
+                        if debug_zmq_verbose and (t_now - last_debug_log_time) >= 1.0:
                             last_debug_log_time = t_now
                             print(
-                                "[CONTROL DEBUG] "
+                                "[CONTROL DEBUG VERBOSE] "
                                 f"consumed navigate_cmd={wbc_goal.get('navigate_cmd')} "
                                 f"base_height={wbc_goal.get('base_height_command')} "
                                 f"toggle_activation={wbc_goal.get('toggle_activation')} "
