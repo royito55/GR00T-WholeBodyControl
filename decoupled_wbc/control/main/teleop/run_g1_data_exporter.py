@@ -5,6 +5,7 @@ import time
 
 import numpy as np
 import rclpy
+from sshkeyboard import listen_keyboard, stop_listening
 import tyro
 
 from decoupled_wbc.control.main.constants import ROBOT_CONFIG_TOPIC, STATE_TOPIC_NAME
@@ -19,6 +20,42 @@ from decoupled_wbc.control.utils.text_to_speech import TextToSpeech
 from decoupled_wbc.data.constants import BUCKET_BASE_PATH
 from decoupled_wbc.data.exporter import DataCollectionInfo, Gr00tDataExporter
 from decoupled_wbc.data.utils import get_dataset_features, get_modality_config
+
+
+class LocalKeyboardListener:
+    def __init__(self):
+        self._data = deque()
+        self._thread = None
+        self._stop_requested = False
+
+    def _on_press(self, key):
+        self._data.append(key)
+        if self._stop_requested:
+            stop_listening()
+
+    def start(self):
+        if self._thread is not None and self._thread.is_alive():
+            return
+        self._stop_requested = False
+        self._thread = threading.Thread(
+            target=lambda: listen_keyboard(on_press=self._on_press),
+            daemon=True,
+        )
+        self._thread.start()
+
+    def read_msg(self):
+        if not self._data:
+            return None
+        return self._data.popleft()
+
+    def stop(self):
+        self._stop_requested = True
+        try:
+            stop_listening()
+        except Exception:
+            pass
+        if self._thread is not None:
+            self._thread.join(timeout=0.5)
 
 
 class TimeDeltaException(Exception):
@@ -94,6 +131,8 @@ class Gr00tDataCollector:
             time.sleep(0.5)
 
         self._episode_state = EpisodeState()
+        self._local_keyboard_listener = LocalKeyboardListener()
+        self._local_keyboard_listener.start()
         self._keyboard_listener = KeyboardListenerSubscriber()
         self._state_subscriber = ROSMsgSubscriber(state_topic_name)
         self._image_subscriber = ComposedCameraClientSensor(server_ip=camera_host, port=camera_port)
@@ -126,7 +165,9 @@ class Gr00tDataCollector:
             print(message)
 
     def _check_keyboard_input(self):
-        key = self._keyboard_listener.read_msg()
+        key = self._local_keyboard_listener.read_msg()
+        if key is None:
+            key = self._keyboard_listener.read_msg()
         if key is None:
             return
 
@@ -238,6 +279,7 @@ class Gr00tDataCollector:
 
         self.node.destroy_node()
         rclpy.shutdown()
+        self._local_keyboard_listener.stop()
         self._print_and_say("Shutting down data exporter...", say=False)
 
     def run(self):
