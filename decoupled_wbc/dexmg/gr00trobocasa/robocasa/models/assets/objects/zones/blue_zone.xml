@@ -5,8 +5,6 @@
       <geom group="1" type="box" contype="0" conaffinity="0" density="0" rgba="0.2 0.4 0.9 1.0"/>
     </default>
   </default>
-  <asset>
-  </asset>
   <worldbody>
     <body>
       <body name="object">

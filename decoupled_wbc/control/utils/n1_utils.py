@@ -11,6 +11,41 @@ from decoupled_wbc.control.robot_model import RobotModel
 from decoupled_wbc.control.robot_model.instantiation import get_robot_type_and_model
 
 
+class StaticWholeBodyControlWrapper(gym.Wrapper):
+    """Wrapper for static environments where lower body remains fixed.
+    
+    This wrapper forces navigate_cmd and base_height_command to default values,
+    preventing any lower body movement.
+    """
+
+    def __init__(self, env, script_config):
+        """Initialize with the WholeBodyControlWrapper nested inside."""
+        # First wrap with the standard WBC wrapper
+        self.wbc_wrapper = WholeBodyControlWrapper(env, script_config)
+        super().__init__(self.wbc_wrapper)
+
+    def step(self, action: Dict[str, Any]) -> Tuple[Any, SupportsFloat, bool, bool, Dict[str, Any]]:
+        """Override action to use default navigation and base height commands."""
+        # For static environments, add/replace navigation and base height commands
+        # In worker environments, actions are always unbatched (1D arrays)
+        
+        # Always set to default static values (unbatched 1D arrays)
+        action["action.navigate_command"] = np.array(DEFAULT_NAV_CMD, dtype=np.float32)
+        action["action.base_height_command"] = np.array([DEFAULT_BASE_HEIGHT], dtype=np.float32)
+        
+        # Pass to the wrapped WBC wrapper
+        return self.wbc_wrapper.step(action)
+
+    def reset(self, **kwargs):
+        """Pass through to WBC wrapper reset."""
+        return self.wbc_wrapper.reset(**kwargs)
+
+    @property
+    def robot_model(self) -> RobotModel:
+        """Return the robot model from the WBC wrapper."""
+        return self.wbc_wrapper.robot_model
+
+
 class WholeBodyControlWrapper(gym.Wrapper):
     """Gymnasium wrapper to integrate whole-body control for locomotion/manipulation sims."""
 

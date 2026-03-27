@@ -99,6 +99,8 @@ class MJCFObject(MujocoXMLObject):
         tree = ET.fromstring(xml_str)
         root = tree
         asset = root.find("asset")
+        if asset is None:
+            return xml_str
         meshes = asset.findall("mesh")
         textures = asset.findall("texture")
         all_elements = meshes + textures

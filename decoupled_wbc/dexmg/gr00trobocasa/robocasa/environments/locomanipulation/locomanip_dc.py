@@ -3,6 +3,7 @@ from robocasa import (
     LMPnPAppleToPlate,
 )
 from decoupled_wbc.dexmg.gr00trobocasa.robocasa.environments.locomanipulation.manip import ManipAppleToPlate, ManipCubeToZone
+from robocasa.environments.locomanipulation.locomanip_static import LMPnPAppleToPlateStatic, LMPnPCubeToZoneStatic
 from robocasa.models.scenes.lab_arena import LabArena
 
 
@@ -20,3 +21,9 @@ class ManipAppleToPlateDC(LabEnvMixin, ManipAppleToPlate): ...
 
 
 class ManipCubeToZoneDC(LabEnvMixin, ManipCubeToZone): ...
+
+
+class LMPnPAppleToPlateStaticDC(LabEnvMixin, LMPnPAppleToPlateStatic): ...
+
+
+class LMPnPCubeToZoneStaticDC(LabEnvMixin, LMPnPCubeToZoneStatic): ...

@@ -1,25 +1,23 @@
 <mujoco model="red_block">
   <default>
     <default class="visual">
-      <geom group="1" type="box" contype="0" conaffinity="0" density="50" rgba="0.8 0.1 0.1 1"/>
+      <geom group="1" type="box" contype="0" conaffinity="0" density="100" rgba="0.8 0.1 0.1 1"/>
     </default>
     <default class="collision">
-      <geom group="0" type="box" density="10" friction="0.01 0.0005 0.00001" solimp="0.95 0.98 0.001" solref="0.004 1" rgba="1 1 1 0.25"/>
+      <geom group="0" type="box" density="500" solimp="0.95 0.98 0.001" solref="0.004 1" rgba="1 1 1 0.25"/>
     </default>
   </default>
-  <asset>
-  </asset>
   <worldbody>
     <body>
       <body name="object">
         <!-- Visual geometry: red cube -->
-        <geom size="0.06 0.06 0.03" class="visual"/>
+        <geom size="0.03 0.03 0.03" class="visual"/>
         <!-- Collision geometry: same cube -->
-        <geom size="0.06 0.06 0.03" class="collision"/>
+        <geom size="0.03 0.03 0.03" class="collision"/>
       </body>
       <site name="bottom_site" pos="0 0 -0.03" rgba="0 0 0 0" size="0.005"/>
       <site name="top_site" pos="0 0 0.03" rgba="0 0 0 0" size="0.005"/>
-      <site name="horizontal_radius_site" pos="0.169704 0.169704 0" rgba="0 0 0 0" size="0.005"/>
+      <site name="horizontal_radius_site" pos="0.042426 0.042426 0" rgba="0 0 0 0" size="0.005"/>
     </body>
   </worldbody>
 </mujoco>
