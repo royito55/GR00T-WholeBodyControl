@@ -369,17 +369,44 @@ echo "Detecting GPU setup..."
 GPU_ENV_VARS=""
 
 # Check if we have both integrated and discrete GPUs (hybrid/Optimus setup)
+#HAS_AMD_GPU=$(lspci | grep -i "vga\|3d\|display" | grep -i amd | wc -l)
+#HAS_INTEL_GPU=$(lspci | grep -i "vga\|3d\|display" | grep -i intel | wc -l)
+#HAS_NVIDIA_GPU=$(lspci | grep -i "vga\|3d\|display" | grep -i nvidia | wc -l)
+
+#if [[ "$HAS_INTEL_GPU" -gt 0 ]] || [[ "$HAS_AMD_GPU" -gt 0 ]] && [[ "$HAS_NVIDIA_GPU" -gt 0 ]]; then
+#    echo "Detected hybrid GPU setup (Intel/AMD integrated + NVIDIA discrete)"
+#    echo "Setting NVIDIA Optimus environment variables for proper rendering offload..."
+#    GPU_ENV_VARS="-e __NV_PRIME_RENDER_OFFLOAD=1 \
+#    -e __VK_LAYER_NV_optimus=NVIDIA_only"
+#else
+#    GPU_ENV_VARS=""
+#fi
+
+# Check GPU layout
 HAS_AMD_GPU=$(lspci | grep -i "vga\|3d\|display" | grep -i amd | wc -l)
 HAS_INTEL_GPU=$(lspci | grep -i "vga\|3d\|display" | grep -i intel | wc -l)
 HAS_NVIDIA_GPU=$(lspci | grep -i "vga\|3d\|display" | grep -i nvidia | wc -l)
 
-if [[ "$HAS_INTEL_GPU" -gt 0 ]] || [[ "$HAS_AMD_GPU" -gt 0 ]] && [[ "$HAS_NVIDIA_GPU" -gt 0 ]]; then
-    echo "Detected hybrid GPU setup (Intel/AMD integrated + NVIDIA discrete)"
-    echo "Setting NVIDIA Optimus environment variables for proper rendering offload..."
-    GPU_ENV_VARS="-e __NV_PRIME_RENDER_OFFLOAD=1 \
-    -e __VK_LAYER_NV_optimus=NVIDIA_only"
+GPU_ENV_VARS=""
+
+# Only use PRIME offload vars when actually in on-demand mode
+if command -v prime-select >/dev/null 2>&1; then
+    PRIME_MODE=$(prime-select query 2>/dev/null || true)
 else
-    GPU_ENV_VARS=""
+    PRIME_MODE=""
+fi
+
+if [[ "$HAS_NVIDIA_GPU" -gt 0 ]] && { [[ "$HAS_INTEL_GPU" -gt 0 ]] || [[ "$HAS_AMD_GPU" -gt 0 ]]; } && [[ "$(prime-select query 2>/dev/null || true)" == "on-demand" ]]; then
+    echo "Integrated + NVIDIA GPUs detected"
+    echo "prime-select mode: ${PRIME_MODE:-unknown}"
+
+    if [[ "$PRIME_MODE" == "on-demand" ]]; then
+        echo "Using PRIME render offload variables"
+        GPU_ENV_VARS="-e __NV_PRIME_RENDER_OFFLOAD=1 \
+-e __VK_LAYER_NV_optimus=NVIDIA_only"
+    else
+        echo "Not using PRIME offload variables"
+    fi
 fi
 
 # Set GPU runtime based on architecture
@@ -408,6 +435,8 @@ DOCKER_RUN_ARGS="--hostname $HOSTNAME \
     -e USERNAME=$USERNAME \
     -e DECOUPLED_WBC_DIR="$DOCKER_HOME_DIR/Projects/$WORKTREE_NAME" \
     -e PYTHONPATH="$DOCKER_HOME_DIR/Projects/$WORKTREE_NAME" \
+    -e MUJOCO_GL=glfw \
+    -e __GL_SYNC_TO_VBLANK=0 \
     -v /dev/bus/usb:/dev/bus/usb \
     -v /tmp/.X11-unix:/tmp/.X11-unix \
     -v $HOME/.ssh:$DOCKER_HOME_DIR/.ssh \
@@ -435,6 +464,10 @@ if [ "$DEPLOY" = true ]; then
         echo "Removing existing deploy container..."
         docker rm -f $DEPLOY_CONTAINER
     fi
+    unset __NV_PRIME_RENDER_OFFLOAD
+    unset __VK_LAYER_NV_optimus
+    unset MUJOCO_GL
+    unset __GL_SYNC_TO_VBLANK
     docker run -it --rm $DOCKER_RUN_ARGS \
         -w $DOCKER_HOME_DIR/Projects/$WORKTREE_NAME \
         --name $DEPLOY_CONTAINER \
@@ -450,6 +483,10 @@ else
         docker exec -it $BASH_CONTAINER /bin/bash
     else
         echo "Creating new bash container with auto-install decoupled_wbc..."
+	unset __NV_PRIME_RENDER_OFFLOAD
+	unset __VK_LAYER_NV_optimus
+	unset MUJOCO_GL
+	unset __GL_SYNC_TO_VBLANK
         docker run -it $DOCKER_RUN_ARGS \
             -w $DOCKER_HOME_DIR/Projects/$WORKTREE_NAME \
             --name $BASH_CONTAINER \

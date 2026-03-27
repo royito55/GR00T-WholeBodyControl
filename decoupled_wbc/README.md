@@ -1,3 +1,15 @@
+# Mujoco
+
+Before running `control_loop.py`, set these:
+
+```bash
+unset __NV_PRIME_RENDER_OFFLOAD
+unset __VK_LAYER_NV_optimus
+export NVIDIA_VISIBLE_DEVICES=all
+export MUJOCO_GL=glfw
+export __GL_SYNC_TO_VBLANK=0
+```
+
 # decoupled_wbc Real Robot Notes
 
 This README documents the changes made to get `control/main/teleop/run_g1_control_loop.py` working on the real G1 after the original `ChannelFactoryInitialize` / ROS 2 collision and the later no-motion issue.
