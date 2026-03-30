@@ -8,6 +8,7 @@
 # Options:
 #   --build           Build Docker image
 #   --clean           Clean containers
+#   --cpu             Build/run without NVIDIA runtime requirements
 #   --deploy          Run in deploy mode
 #   --install         Pull prebuilt Docker image
 #   --push            Push built image to Docker Hub
@@ -25,6 +26,7 @@ set -e
 # Default values
 BUILD=false
 CLEAN=false
+CPU_ONLY=false
 DEPLOY=false
 INSTALL=false
 # Flag to push the built Docker image to Docker Hub
@@ -53,6 +55,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --clean)
             CLEAN=true
+            shift
+            ;;
+        --cpu)
+            CPU_ONLY=true
             shift
             ;;
         --deploy)
@@ -296,11 +302,15 @@ function build_with_cleanup {
     echo "Images cleaned!"
     
     if is_arm64; then
-        install_nvidia_toolkit
+        if [ "$CPU_ONLY" != true ]; then
+            install_nvidia_toolkit
+        fi
         build_arm64_base_image
     else
         install_docker_buildx
-        install_nvidia_toolkit
+        if [ "$CPU_ONLY" != true ]; then
+            install_nvidia_toolkit
+        fi
     fi
     build_docker_image
 }
@@ -365,29 +375,36 @@ setup_x11 && X11_ENABLED=true
 chmod g+r+w /dev/input/* 2>/dev/null || true
 
 # Detect GPU setup and set appropriate environment variables
-echo "Detecting GPU setup..."
 GPU_ENV_VARS=""
+NVIDIA_ENV_VARS=""
 
-# Check if we have both integrated and discrete GPUs (hybrid/Optimus setup)
-HAS_AMD_GPU=$(lspci | grep -i "vga\|3d\|display" | grep -i amd | wc -l)
-HAS_INTEL_GPU=$(lspci | grep -i "vga\|3d\|display" | grep -i intel | wc -l)
-HAS_NVIDIA_GPU=$(lspci | grep -i "vga\|3d\|display" | grep -i nvidia | wc -l)
-
-if [[ "$HAS_INTEL_GPU" -gt 0 ]] || [[ "$HAS_AMD_GPU" -gt 0 ]] && [[ "$HAS_NVIDIA_GPU" -gt 0 ]]; then
-    echo "Detected hybrid GPU setup (Intel/AMD integrated + NVIDIA discrete)"
-    echo "Setting NVIDIA Optimus environment variables for proper rendering offload..."
-    GPU_ENV_VARS="-e __NV_PRIME_RENDER_OFFLOAD=1 \
-    -e __VK_LAYER_NV_optimus=NVIDIA_only"
+if [ "$CPU_ONLY" = true ]; then
+    echo "CPU-only mode enabled, skipping NVIDIA runtime setup..."
 else
-    GPU_ENV_VARS=""
-fi
+    echo "Detecting GPU setup..."
 
-# Set GPU runtime based on architecture
-if is_arm64; then
-    echo "Detected ARM64 architecture (Jetson Orin), using device access instead of nvidia runtime..."
-    GPU_RUNTIME_ARGS="--device /dev/nvidia0 --device /dev/nvidiactl --device /dev/nvidia-modeset --device /dev/nvidia-uvm --device /dev/nvidia-uvm-tools"
-else
-    GPU_RUNTIME_ARGS="--gpus all --runtime=nvidia"
+    # Check if we have both integrated and discrete GPUs (hybrid/Optimus setup)
+    HAS_AMD_GPU=$(lspci | grep -i "vga\|3d\|display" | grep -i amd | wc -l)
+    HAS_INTEL_GPU=$(lspci | grep -i "vga\|3d\|display" | grep -i intel | wc -l)
+    HAS_NVIDIA_GPU=$(lspci | grep -i "vga\|3d\|display" | grep -i nvidia | wc -l)
+
+    if [[ "$HAS_INTEL_GPU" -gt 0 ]] || [[ "$HAS_AMD_GPU" -gt 0 ]] && [[ "$HAS_NVIDIA_GPU" -gt 0 ]]; then
+        echo "Detected hybrid GPU setup (Intel/AMD integrated + NVIDIA discrete)"
+        echo "Setting NVIDIA Optimus environment variables for proper rendering offload..."
+        GPU_ENV_VARS="-e __NV_PRIME_RENDER_OFFLOAD=1 \
+        -e __VK_LAYER_NV_optimus=NVIDIA_only"
+    fi
+
+    if is_arm64; then
+        echo "Detected ARM64 architecture (Jetson Orin), using device access instead of nvidia runtime..."
+        GPU_RUNTIME_ARGS="--device /dev/nvidia0 --device /dev/nvidiactl --device /dev/nvidia-modeset --device /dev/nvidia-uvm --device /dev/nvidia-uvm-tools"
+    else
+        GPU_RUNTIME_ARGS="--gpus all --runtime=nvidia"
+    fi
+
+    NVIDIA_ENV_VARS="-e NVIDIA_VISIBLE_DEVICES=all \
+    -e NVIDIA_DRIVER_CAPABILITIES=graphics,compute,utility \
+    -e __GLX_VENDOR_LIBRARY_NAME=nvidia"
 fi
 
 # Common Docker run parameters
@@ -400,11 +417,9 @@ DOCKER_RUN_ARGS="--hostname $HOSTNAME \
     --privileged \
     --device=/dev \
     $GPU_ENV_VARS \
+    $NVIDIA_ENV_VARS \
     -p 5678:5678 \
     -e DISPLAY=$DISPLAY \
-    -e NVIDIA_VISIBLE_DEVICES=all \
-    -e NVIDIA_DRIVER_CAPABILITIES=graphics,compute,utility \
-    -e __GLX_VENDOR_LIBRARY_NAME=nvidia \
     -e USERNAME=$USERNAME \
     -e DECOUPLED_WBC_DIR="$DOCKER_HOME_DIR/Projects/$WORKTREE_NAME" \
     -e PYTHONPATH="$DOCKER_HOME_DIR/Projects/$WORKTREE_NAME" \
