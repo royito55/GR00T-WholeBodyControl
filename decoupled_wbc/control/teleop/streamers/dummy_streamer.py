@@ -1,5 +1,6 @@
 import numpy as np
 
+from decoupled_wbc.control.policy.keyboard_navigation_policy import KeyboardNavigationPolicy
 from decoupled_wbc.control.teleop.streamers.base_streamer import BaseStreamer, StreamerOutput
 from decoupled_wbc.control.utils.keyboard_dispatcher import KeyboardListenerSubscriber
 
@@ -11,6 +12,7 @@ class DummyStreamer(BaseStreamer):
         super().__init__(*args, **kwargs)
         self.is_streaming = False
         self.keyboard_listener = KeyboardListenerSubscriber()
+        self.navigation_policy = KeyboardNavigationPolicy(verbose=True)
         self.left_fingertips = np.zeros((25, 4, 4))
         self.right_fingertips = np.zeros((25, 4, 4))
         self.left_fingertips[4, 0, 3] = 1.0  # open
@@ -19,6 +21,7 @@ class DummyStreamer(BaseStreamer):
     def start_streaming(self):
         self.is_streaming = True
         print("Dummy streamer started with hardcoded IK data")
+        print("Keyboard walking controls: w/s forward-back, a/d strafe, q/e yaw, z reset")
 
     def get(self) -> StreamerOutput:
         """Return hardcoded dummy data with proper IK format."""
@@ -28,7 +31,11 @@ class DummyStreamer(BaseStreamer):
         # Hardcoded dummy data - identity matrices and zeros
         left_wrist_pose = np.eye(4)
         right_wrist_pose = np.eye(4)
-        left_fingers, right_fingers = self._generate_finger_data()
+        key = self.keyboard_listener.read_msg()
+        left_fingers, right_fingers = self._generate_finger_data(key)
+        if key is not None:
+            self.navigation_policy.handle_keyboard_button(key)
+        navigate_cmd = self.navigation_policy.get_action()["navigate_cmd"]
 
         return StreamerOutput(
             ik_data={
@@ -38,7 +45,7 @@ class DummyStreamer(BaseStreamer):
                 "right_fingers": {"position": right_fingers},
             },
             control_data={
-                "navigate_cmd": [0.0, 0.0, 0.0],  # No movement
+                "navigate_cmd": navigate_cmd,
                 "toggle_stand_command": False,
                 "base_height_command": 0.78,  # Default standing height
             },
@@ -53,11 +60,10 @@ class DummyStreamer(BaseStreamer):
         self.is_streaming = False
         print("Dummy streamer stopped")
 
-    def _generate_finger_data(self):
+    def _generate_finger_data(self, key=None):
         """Generate finger position data similar to iPhone streamer."""
 
         # Control thumb based on shoulder button state (index 4 is thumb tip)
-        key = self.keyboard_listener.read_msg()
         index = 5
         middle = 10
         ring = 15
