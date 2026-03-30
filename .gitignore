@@ -192,3 +192,5 @@ uv.lock
 xrobotoolkit_sdk.cpython-*-*-*.so
 teleop_vids/
 *.code-workspace
+
+/datasets
