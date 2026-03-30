@@ -32,48 +32,50 @@ def register_keyboard_interrupt_handler():
 
 
 class ROSManager:
-    """
-    Manages the ROS2 node and executor.
+    _instance = None
+    _lock = threading.Lock()
 
-    Usage example:
-    ```python
-    def main():
-        ros_manager = ROSManager()
-        node = ros_manager.node
-
-        try:
-            while ros_manager.ok():
-                time.sleep(0.1)
-        except ros_manager.exceptions() as e:
-            print(f"ROSManager interrupted by user: {e}")
-        finally:
-            ros_manager.shutdown()
-    ```
-    """
+    def __new__(cls, node_name: str = "ros_manager"):
+        with cls._lock:
+            if cls._instance is None:
+                cls._instance = super().__new__(cls)
+                cls._instance._initialized = False
+        return cls._instance
 
     def __init__(self, node_name: str = "ros_manager"):
+        if self._initialized:
+            return
+
         if not rclpy.ok():
             rclpy.init()
-            self.node = rclpy.create_node(node_name)
-            self.thread = threading.Thread(target=rclpy.spin, args=(self.node,), daemon=True)
-            self.thread.start()
-        else:
-            executor = rclpy.get_global_executor()
-            if len(executor.get_nodes()) > 0:
-                self.node = executor.get_nodes()[0]
-            else:
-                self.node = rclpy.create_node(node_name)
+
+        self.node = rclpy.create_node(node_name)
+
+        self._executor = SingleThreadedExecutor()
+        self._executor.add_node(self.node)
+
+        self._thread = threading.Thread(target=self._executor.spin, daemon=True)
+        self._thread.start()
 
         register_keyboard_interrupt_handler()
+        self._initialized = True
 
     @staticmethod
     def ok():
         return rclpy.ok()
 
-    @staticmethod
-    def shutdown():
-        if rclpy.ok():
+    def shutdown(self):
+        if not rclpy.ok():
+            return
+        try:
+            self._executor.shutdown()
+        finally:
+            try:
+                self.node.destroy_node()
+            except Exception:
+                pass
             rclpy.shutdown()
+            self._thread.join(timeout=1.0)
 
     @staticmethod
     def exceptions():
@@ -85,9 +87,24 @@ class ROSMsgPublisher:
     Publishes any serializable dict to a topic.
     """
 
-    def __init__(self, topic_name: str):
-        ros_manager = ROSManager()
-        self.node = ros_manager.node
+    def __init__(self, *args):
+        """Create a publisher.
+
+        Supports both historical call patterns used across the codebase:
+        - ROSMsgPublisher(topic_name)
+        - ROSMsgPublisher(node, topic_name)
+        """
+        if len(args) == 1:
+            topic_name = args[0]
+            ros_manager = ROSManager()
+            self.node = ros_manager.node
+        elif len(args) == 2:
+            self.node, topic_name = args
+        else:
+            raise TypeError(
+                "ROSMsgPublisher expects (topic_name) or (node, topic_name), "
+                f"got {len(args)} arguments"
+            )
         self.publisher = self.node.create_publisher(ByteMultiArray, topic_name, 1)
 
     def publish(self, msg: dict):
@@ -103,9 +120,24 @@ class ROSMsgSubscriber:
     Subscribes to any topics published by a ROSMsgPublisher.
     """
 
-    def __init__(self, topic_name: str):
-        ros_manager = ROSManager()
-        self.node = ros_manager.node
+    def __init__(self, *args):
+        """Create a subscriber.
+
+        Supports both historical call patterns used across the codebase:
+        - ROSMsgSubscriber(topic_name)
+        - ROSMsgSubscriber(node, topic_name)
+        """
+        if len(args) == 1:
+            topic_name = args[0]
+            ros_manager = ROSManager()
+            self.node = ros_manager.node
+        elif len(args) == 2:
+            self.node, topic_name = args
+        else:
+            raise TypeError(
+                "ROSMsgSubscriber expects (topic_name) or (node, topic_name), "
+                f"got {len(args)} arguments"
+            )
         self._msg = None
         self.subscription = self.node.create_subscription(
             ByteMultiArray, topic_name, self._callback, 1
