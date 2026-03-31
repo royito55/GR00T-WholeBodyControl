@@ -246,6 +246,11 @@ def main(config: ControlLoopConfig):
                     if key.endswith("_image"):
                         del msg[key]
 
+                now = time.time()
+                msg["timestamps"] = {
+                    "main_loop": now,
+                    "proprio": now,
+                }
                 if last_teleop_cmd:
                     msg.update(
                         {
@@ -257,10 +262,6 @@ def main(config: ControlLoopConfig):
                             "navigate_command": last_teleop_cmd.get(
                                 "navigate_cmd", DEFAULT_NAV_CMD
                             ),
-                            "timestamps": {
-                                "main_loop": time.time(),
-                                "proprio": time.time(),
-                            },
                         }
                     )
                 ros_bridge.publish_state(msg)

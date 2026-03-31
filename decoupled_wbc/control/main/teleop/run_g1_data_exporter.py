@@ -257,7 +257,11 @@ class Gr00tDataCollector:
     def _add_data_frame(self):
         t_start = time.monotonic()
 
-        if self.latest_proprio_msg is None or self.latest_image_msg is None:
+        if (
+            self.latest_proprio_msg is None
+            or self.latest_image_msg is None
+            or "timestamps" not in self.latest_proprio_msg
+        ):
             now = time.monotonic()
             if now - self._last_waiting_log_time >= self._waiting_log_interval_sec:
                 self._last_waiting_log_time = now
