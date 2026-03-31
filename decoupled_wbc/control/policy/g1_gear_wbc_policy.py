@@ -202,13 +202,16 @@ class G1GearWbcPolicy(Policy):
         if self.obs_tensor is None:
             raise ValueError("No observation set. Call set_observation() first.")
 
-        if base_height_command is not None and self.use_teleop_policy_cmd:
+        # Always use teleop height command if provided (independent of navigation)
+        if base_height_command is not None:
             self.height_cmd = (
                 base_height_command[0]
                 if isinstance(base_height_command, list)
                 else base_height_command
             )
 
+        # Only use teleop navigation if both provided AND teleop mode is active
+        # This allows keyboard to work when teleop isn't controlling navigation
         if interpolated_navigate_cmd is not None and self.use_teleop_policy_cmd:
             self.cmd = interpolated_navigate_cmd
 

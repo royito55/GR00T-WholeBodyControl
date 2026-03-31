@@ -1,0 +1,21 @@
+<mujoco model="blue_sphere">
+  <default>
+    <default class="visual">
+      <geom group="1" type="sphere" contype="0" conaffinity="0" density="500" rgba="0.1 0.1 0.5 1"/>
+    </default>
+    <default class="collision">
+      <geom group="0" type="sphere" density="1000" friction="0.1 0.005 0.0001" solimp="0.95 0.98 0.001" solref="0.004 1" rgba="1 1 1 0.25"/>
+    </default>
+  </default>
+  <worldbody>
+    <body>
+      <body name="object">
+        <geom size="0.3" class="visual"/>
+        <geom size="0.3" class="collision"/>
+      </body>
+      <site name="bottom_site" pos="0 0 -0.3" rgba="0 0 0 0" size="0.005"/>
+      <site name="top_site" pos="0 0 0.3" rgba="0 0 0 0" size="0.005"/>
+      <site name="horizontal_radius_site" pos="0.169704 0.169704 0" rgba="0 0 0 0" size="0.005"/>
+    </body>
+  </worldbody>
+</mujoco>

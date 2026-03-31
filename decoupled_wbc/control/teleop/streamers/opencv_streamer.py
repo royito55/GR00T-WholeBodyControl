@@ -151,7 +151,7 @@ class OpenCVStreamer(BaseStreamer):
                 },
                 control_data={
                     "base_height_command": self.current_base_height,
-                    "navigate_cmd": [0.0, 0.0, 0.0],
+                    # Don't send navigate_cmd - let keyboard control it
                 },
                 source="opencv",
             )
@@ -195,7 +195,7 @@ class OpenCVStreamer(BaseStreamer):
             },
             control_data={
                 "base_height_command": self.current_base_height,
-                "navigate_cmd": [0.0, 0.0, 0.0],  # No navigation from OpenCV
+                # Don't send navigate_cmd - let keyboard control it
             },
             teleop_data={
                 "toggle_activation": toggle_activation,  # Send the toggle EVENT, not the state

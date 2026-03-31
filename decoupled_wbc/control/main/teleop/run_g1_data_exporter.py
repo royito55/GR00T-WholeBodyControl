@@ -126,7 +126,7 @@ class Gr00tDataCollector:
 
     def _check_keyboard_input(self):
         key = self._keyboard_listener.read_msg()
-        if key == "c":
+        if key == "b":
             self._episode_state.change_state()
             if self._episode_state.get_state() == self._episode_state.RECORDING:
                 self._print_and_say(f"Started recording {self.current_episode_index}")
@@ -134,7 +134,7 @@ class Gr00tDataCollector:
                 self._print_and_say("Stopping recording, preparing to save")
             elif self._episode_state.get_state() == self._episode_state.IDLE:
                 self._print_and_say("Saved episode and back to idle state")
-        elif key == "x":
+        elif key == "n":
             if self._episode_state.get_state() == self._episode_state.RECORDING:
                 self.data_exporter.save_episode_as_discarded()
                 self._episode_state.reset_state()

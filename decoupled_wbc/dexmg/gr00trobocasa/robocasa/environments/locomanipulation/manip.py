@@ -158,7 +158,7 @@ class ManipAppleToPlate(LMSimpleEnv, DexMGConfigHelper):
         )
 
 
-class ManipAppleToPlate(ManipAppleToPlate):
+class ManipAppleToPlateDC(ManipAppleToPlate):
     pass  # The LabEnvMixin will be added when registering
 
 

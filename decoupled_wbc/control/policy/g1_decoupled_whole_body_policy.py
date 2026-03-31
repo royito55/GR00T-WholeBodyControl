@@ -61,20 +61,15 @@ class G1DecoupledWholeBodyPolicy(Policy):
             if key in goal:
                 upper_body_goal[key] = goal[key]
 
-        # Always ensure navigate_cmd is present to prevent interpolation from old dangerous values
-        if "navigate_cmd" not in goal:
-            # Safety: Inject safe default navigate_cmd to ensure interpolation goes to stop
-            if "target_time" in goal and isinstance(goal["target_time"], list):
-                upper_body_goal["navigate_cmd"] = [np.array(DEFAULT_NAV_CMD)] * len(
-                    goal["target_time"]
-                )
-            else:
-                upper_body_goal["navigate_cmd"] = np.array(DEFAULT_NAV_CMD)
+        # Don't inject default navigate_cmd - allow keyboard control when not in teleop navigation mode
+        # If navigate_cmd is not provided, keyboard will control navigation
 
-        # Set teleop policy command flag
-        has_teleop_commands = ("navigate_cmd" in goal) or ("base_height_command" in goal)
-        self.is_in_teleop_mode = has_teleop_commands  # Track teleop state for timeout safety
-        self.lower_body_policy.set_use_teleop_policy_cmd(has_teleop_commands)
+        # Set teleop policy command flag - only for navigation, not just base_height
+        has_teleop_nav_commands = "navigate_cmd" in goal
+        has_teleop_height_commands = "base_height_command" in goal
+        self.is_in_teleop_mode = has_teleop_nav_commands  # Track teleop state for timeout safety
+        # Only override keyboard navigation when navigate_cmd is actually provided
+        self.lower_body_policy.set_use_teleop_policy_cmd(has_teleop_nav_commands or has_teleop_height_commands)
 
         # Lower body goal keys
         lower_body_keys = [
