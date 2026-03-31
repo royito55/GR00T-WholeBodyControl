@@ -62,6 +62,11 @@ class TeleopStreamer:
 
                 self.body_streamer = PicoStreamer()
                 self.body_streamer.start_streaming()
+            elif body_control_device == "opencv":
+                from decoupled_wbc.control.teleop.streamers.opencv_streamer import OpenCVStreamer
+
+                self.body_streamer = OpenCVStreamer()
+                self.body_streamer.start_streaming()
             elif body_control_device == "dummy":
                 from decoupled_wbc.control.teleop.streamers.dummy_streamer import DummyStreamer
 
@@ -90,6 +95,11 @@ class TeleopStreamer:
                     from decoupled_wbc.control.teleop.streamers.pico_streamer import PicoStreamer
 
                     self.hand_streamer = PicoStreamer()
+                    self.hand_streamer.start_streaming()
+                elif hand_control_device == "opencv":
+                    from decoupled_wbc.control.teleop.streamers.opencv_streamer import OpenCVStreamer
+
+                    self.hand_streamer = OpenCVStreamer()
                     self.hand_streamer.start_streaming()
                 else:
                     self.hand_streamer = None
