@@ -1,7 +1,5 @@
 import time
 
-import msgpack
-import msgpack_numpy as mnp
 import rclpy
 import tyro
 
@@ -60,18 +58,6 @@ def main(config: TeleopConfig):
     # Create a publisher for the navigation commands
     control_publisher = ROSMsgPublisher(CONTROL_GOAL_TOPIC)
 
-    # Optionally publish via ZMQ for remote subscribers (e.g. robot on a separate machine)
-    zmq_pub = None
-    if config.zmq_publish_port is not None:
-        import zmq
-
-        zmq_context = zmq.Context()
-        zmq_pub = zmq_context.socket(zmq.PUB)
-        zmq_pub.setsockopt(zmq.SNDHWM, 10)
-        zmq_pub.setsockopt(zmq.LINGER, 0)
-        zmq_pub.bind(f"tcp://*:{config.zmq_publish_port}")
-        print(f"Publishing teleop commands via ZMQ on tcp://*:{config.zmq_publish_port}")
-
     # Create rate controller
     rate = node.create_rate(config.teleop_frequency)
     iteration = 0
@@ -100,8 +86,6 @@ def main(config: TeleopConfig):
                 # Publish the teleop command
                 with telemetry.timer("publish_teleop_command"):
                     control_publisher.publish(data)
-                    if zmq_pub is not None:
-                        zmq_pub.send(msgpack.packb(data, default=mnp.encode))
 
                 # For the initial pose, wait the full duration before continuing
                 if iteration == 0:
@@ -118,9 +102,6 @@ def main(config: TeleopConfig):
 
     finally:
         print("Cleaning up...")
-        if zmq_pub is not None:
-            zmq_pub.close()
-            zmq_context.term()
         ros_manager.shutdown()
 
 
