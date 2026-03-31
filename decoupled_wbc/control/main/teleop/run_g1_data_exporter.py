@@ -13,7 +13,6 @@ from decoupled_wbc.control.main.teleop.configs.configs import DataExporterConfig
 from decoupled_wbc.control.robot_model.instantiation import g1
 from decoupled_wbc.control.sensor.composed_camera import ComposedCameraClientSensor
 from decoupled_wbc.control.utils.episode_state import EpisodeState
-from decoupled_wbc.control.utils.keyboard_dispatcher import KeyboardListenerSubscriber
 from decoupled_wbc.control.utils.ros_utils import ROSManager, ROSMsgSubscriber, ROSServiceClient
 from decoupled_wbc.control.utils.telemetry import Telemetry
 from decoupled_wbc.control.utils.text_to_speech import TextToSpeech
@@ -56,6 +55,57 @@ class LocalKeyboardListener:
             pass
         if self._thread is not None:
             self._thread.join(timeout=0.5)
+
+
+class ZmqKeyboardSource:
+    """Reads toggle_data_collection / toggle_data_abort from the teleop ZMQ stream
+    and converts them to 'c' / 'x' key events, bypassing ROS entirely."""
+
+    def __init__(self, host: str, port: int):
+        import msgpack
+        import msgpack_numpy as mnp
+        import zmq
+
+        self._msgpack = msgpack
+        self._mnp = mnp
+        self._context = zmq.Context()
+        self._socket = self._context.socket(zmq.SUB)
+        self._socket.setsockopt(zmq.SUBSCRIBE, b"")
+        self._socket.setsockopt(zmq.RCVTIMEO, 0)  # non-blocking
+        self._socket.setsockopt(zmq.LINGER, 0)
+        self._socket.connect(f"tcp://{host}:{port}")
+        self._toggle_collection_last = False
+        self._toggle_abort_last = False
+        print(f"ZmqKeyboardSource connected to tcp://{host}:{port}")
+
+    def read_msg(self):
+        """Return 'c', 'x', or None based on rising edges of the PICO A/B buttons."""
+        try:
+            raw = self._socket.recv()
+        except Exception:
+            return None
+
+        try:
+            data = self._msgpack.unpackb(raw, object_hook=self._mnp.decode)
+        except Exception:
+            return None
+
+        toggle_collection = bool(data.get("toggle_data_collection", False))
+        toggle_abort = bool(data.get("toggle_data_abort", False))
+
+        key = None
+        if toggle_collection and not self._toggle_collection_last:
+            key = "c"
+        elif toggle_abort and not self._toggle_abort_last:
+            key = "x"
+
+        self._toggle_collection_last = toggle_collection
+        self._toggle_abort_last = toggle_abort
+        return key
+
+    def close(self):
+        self._socket.close()
+        self._context.term()
 
 
 class TimeDeltaException(Exception):
@@ -116,6 +166,8 @@ class Gr00tDataCollector:
         text_to_speech=None,
         frequency=20,
         state_act_msg_frequency=50,
+        zmq_teleop_host: str = None,
+        zmq_teleop_port: int = 5557,
     ):
 
         self.text_to_speech = text_to_speech
@@ -133,7 +185,10 @@ class Gr00tDataCollector:
         self._episode_state = EpisodeState()
         self._local_keyboard_listener = LocalKeyboardListener()
         self._local_keyboard_listener.start()
-        self._keyboard_listener = KeyboardListenerSubscriber()
+        if zmq_teleop_host is not None:
+            self._zmq_keyboard_source = ZmqKeyboardSource(host=zmq_teleop_host, port=zmq_teleop_port)
+        else:
+            self._zmq_keyboard_source = None
         self._state_subscriber = ROSMsgSubscriber(state_topic_name)
         self._image_subscriber = ComposedCameraClientSensor(server_ip=camera_host, port=camera_port)
         self.rate = self.node.create_rate(self.frequency)
@@ -166,8 +221,8 @@ class Gr00tDataCollector:
 
     def _check_keyboard_input(self):
         key = self._local_keyboard_listener.read_msg()
-        if key is None:
-            key = self._keyboard_listener.read_msg()
+        if key is None and self._zmq_keyboard_source is not None:
+            key = self._zmq_keyboard_source.read_msg()
         if key is None:
             return
 
@@ -280,6 +335,8 @@ class Gr00tDataCollector:
         self.node.destroy_node()
         rclpy.shutdown()
         self._local_keyboard_listener.stop()
+        if self._zmq_keyboard_source is not None:
+            self._zmq_keyboard_source.close()
         self._print_and_say("Shutting down data exporter...", say=False)
 
     def run(self):
@@ -375,6 +432,8 @@ def main(config: DataExporterConfig):
         camera_host=config.camera_host,
         camera_port=config.camera_port,
         text_to_speech=text_to_speech,
+        zmq_teleop_host=config.zmq_teleop_host,
+        zmq_teleop_port=config.zmq_teleop_port,
     )
     data_collector.run()
 
