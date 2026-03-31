@@ -5,7 +5,6 @@ import time
 
 import numpy as np
 import rclpy
-from sshkeyboard import listen_keyboard, stop_listening
 import tyro
 
 from decoupled_wbc.control.main.constants import ROBOT_CONFIG_TOPIC, STATE_TOPIC_NAME
@@ -14,48 +13,12 @@ from decoupled_wbc.control.robot_model.instantiation import g1
 from decoupled_wbc.control.sensor.composed_camera import ComposedCameraClientSensor
 from decoupled_wbc.control.utils.episode_state import EpisodeState
 from decoupled_wbc.control.utils.keyboard_dispatcher import KeyboardListenerSubscriber
-from decoupled_wbc.control.utils.ros_utils import ROSManager, ROSMsgSubscriber, ROSServiceClient
+from decoupled_wbc.control.utils.ros_utils import ROSMsgSubscriber, ROSServiceClient
 from decoupled_wbc.control.utils.telemetry import Telemetry
 from decoupled_wbc.control.utils.text_to_speech import TextToSpeech
 from decoupled_wbc.data.constants import BUCKET_BASE_PATH
 from decoupled_wbc.data.exporter import DataCollectionInfo, Gr00tDataExporter
 from decoupled_wbc.data.utils import get_dataset_features, get_modality_config
-
-
-class LocalKeyboardListener:
-    def __init__(self):
-        self._data = deque()
-        self._thread = None
-        self._stop_requested = False
-
-    def _on_press(self, key):
-        self._data.append(key)
-        if self._stop_requested:
-            stop_listening()
-
-    def start(self):
-        if self._thread is not None and self._thread.is_alive():
-            return
-        self._stop_requested = False
-        self._thread = threading.Thread(
-            target=lambda: listen_keyboard(on_press=self._on_press),
-            daemon=True,
-        )
-        self._thread.start()
-
-    def read_msg(self):
-        if not self._data:
-            return None
-        return self._data.popleft()
-
-    def stop(self):
-        self._stop_requested = True
-        try:
-            stop_listening()
-        except Exception:
-            pass
-        if self._thread is not None:
-            self._thread.join(timeout=0.5)
 
 
 class TimeDeltaException(Exception):
@@ -94,6 +57,10 @@ class TimingThresholdMonitor:
             self.last_failure_time = time.monotonic()
 
         if self.is_threshold_exceeded():
+            print(
+                f"Time delta exception: {self.failure_count} failures in {self.reset_timeout_sec} seconds"
+                f", time delta: {time_delta}"
+            )
             if self.raise_exception:
                 raise TimeDeltaException(self.failure_count, self.reset_timeout_sec)
 
@@ -124,15 +91,11 @@ class Gr00tDataCollector:
 
         self.node = node
 
-        executor = rclpy.get_global_executor()
-        if self.node not in executor.get_nodes():
-            thread = threading.Thread(target=rclpy.spin, args=(self.node,), daemon=True)
-            thread.start()
-            time.sleep(0.5)
+        thread = threading.Thread(target=rclpy.spin, args=(self.node,), daemon=True)
+        thread.start()
+        time.sleep(0.5)
 
         self._episode_state = EpisodeState()
-        self._local_keyboard_listener = LocalKeyboardListener()
-        self._local_keyboard_listener.start()
         self._keyboard_listener = KeyboardListenerSubscriber()
         self._state_subscriber = ROSMsgSubscriber(state_topic_name)
         self._image_subscriber = ComposedCameraClientSensor(server_ip=camera_host, port=camera_port)
@@ -147,11 +110,8 @@ class Gr00tDataCollector:
 
         self.telemetry = Telemetry(window_size=100)
         self.timing_threshold_monitor = TimingThresholdMonitor()
-        self._last_waiting_log_time = 0.0
-        self._waiting_log_interval_sec = 5.0
-        self._last_keyboard_key = None
-        self._last_keyboard_key_time = 0.0
-        self._keyboard_debounce_sec = 0.35
+
+        print(f"Recording to {self.data_exporter.meta.root}")
 
     @property
     def current_episode_index(self):
@@ -165,27 +125,9 @@ class Gr00tDataCollector:
             print(message)
 
     def _check_keyboard_input(self):
-        key = self._local_keyboard_listener.read_msg()
-        if key is None:
-            key = self._keyboard_listener.read_msg()
-        if key is None:
-            return
-
-        now = time.monotonic()
-        if (
-            key == self._last_keyboard_key
-            and (now - self._last_keyboard_key_time) < self._keyboard_debounce_sec
-        ):
-            return
-
-        self._last_keyboard_key = key
-        self._last_keyboard_key_time = now
-
+        key = self._keyboard_listener.read_msg()
         if key == "c":
-            prev_state = self._episode_state.get_state()
             self._episode_state.change_state()
-            new_state = self._episode_state.get_state()
-            self._print_and_say(f"[EXPORTER] received 'c': {prev_state} -> {new_state}", say=False)
             if self._episode_state.get_state() == self._episode_state.RECORDING:
                 self._print_and_say(f"Started recording {self.current_episode_index}")
             elif self._episode_state.get_state() == self._episode_state.NEED_TO_SAVE:
@@ -194,7 +136,6 @@ class Gr00tDataCollector:
                 self._print_and_say("Saved episode and back to idle state")
         elif key == "x":
             if self._episode_state.get_state() == self._episode_state.RECORDING:
-                self._print_and_say("[EXPORTER] received 'x': recording -> discarded", say=False)
                 self.data_exporter.save_episode_as_discarded()
                 self._episode_state.reset_state()
                 self._print_and_say("Discarded episode")
@@ -203,15 +144,12 @@ class Gr00tDataCollector:
         t_start = time.monotonic()
 
         if self.latest_proprio_msg is None or self.latest_image_msg is None:
-            now = time.monotonic()
-            if now - self._last_waiting_log_time >= self._waiting_log_interval_sec:
-                self._last_waiting_log_time = now
-                self._print_and_say(
-                    f"Waiting for message. "
-                    f"Avail msg: proprio {self.latest_proprio_msg is not None} | "
-                    f"image {self.latest_image_msg is not None}",
-                    say=False,
-                )
+            self._print_and_say(
+                f"Waiting for message. "
+                f"Avail msg: proprio {self.latest_proprio_msg is not None} | "
+                f"image {self.latest_image_msg is not None}",
+                say=False,
+            )
             return False
 
         if self._episode_state.get_state() == self._episode_state.RECORDING:
@@ -223,6 +161,8 @@ class Gr00tDataCollector:
                 max_time_delta = max(max_time_delta, time_delta)
 
             self.timing_threshold_monitor.log_time_delta(max_time_delta)
+            if (self.timing_threshold_monitor.failure_count + 1) % 100 == 0:
+                self._print_and_say("Image state delta too high, please discard data")
 
             frame_data = {
                 "observation.state": self.latest_proprio_msg["q"],
@@ -258,6 +198,11 @@ class Gr00tDataCollector:
                     frame_data[feature_name] = images[image_key]
 
             self.data_exporter.add_frame(frame_data)
+
+        t_end = time.monotonic()
+        if t_end - t_start > (1 / self.frequency):
+            print(f"DataExporter Missed: {t_end - t_start} sec")
+
         if self._episode_state.get_state() == self._episode_state.NEED_TO_SAVE:
             self.data_exporter.save_episode()
             self.timing_threshold_monitor.reset()
@@ -279,7 +224,6 @@ class Gr00tDataCollector:
 
         self.node.destroy_node()
         rclpy.shutdown()
-        self._local_keyboard_listener.stop()
         self._print_and_say("Shutting down data exporter...", say=False)
 
     def run(self):
@@ -293,15 +237,15 @@ class Gr00tDataCollector:
                         if msg is not None:
                             self.latest_proprio_msg = msg
 
-                    # 2. check keyboard input first so remote A/B toggles are not delayed by camera polling
-                    with self.telemetry.timer("check_keyboard"):
-                        self._check_keyboard_input()
-
-                    # 3. poll image msg
+                    # 2. poll image msg
                     with self.telemetry.timer("poll_image"):
                         msg = self._image_subscriber.read()
                         if msg is not None:
                             self.latest_image_msg = msg
+
+                    # 3. check keyboard input
+                    with self.telemetry.timer("check_keyboard"):
+                        self._check_keyboard_input()
 
                     # 4. add frame
                     with self.telemetry.timer("add_frame"):
@@ -310,6 +254,12 @@ class Gr00tDataCollector:
                     end_time = time.monotonic()
 
                 self.rate.sleep()
+
+                # Log timing information if we missed our target frequency
+                if (end_time - t_start) > (1 / self.frequency):
+                    self.telemetry.log_timing_info(
+                        context="Data Exporter Loop Missed", threshold=0.001
+                    )
 
         except KeyboardInterrupt:
             print("Data exporter terminated by user")
@@ -324,8 +274,9 @@ class Gr00tDataCollector:
 
 
 def main(config: DataExporterConfig):
-    ros_manager = ROSManager(node_name="data_exporter")
-    node = ros_manager.node
+
+    rclpy.init(args=None)
+    node = rclpy.create_node("data_exporter")
 
     waist_location = "lower_and_upper_body" if config.enable_waist else "lower_body"
     g1_rm = g1.instantiate_g1_robot_model(
