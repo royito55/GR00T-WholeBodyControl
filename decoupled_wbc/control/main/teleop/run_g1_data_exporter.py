@@ -167,7 +167,7 @@ class Gr00tDataCollector:
         frequency=20,
         state_act_msg_frequency=50,
         zmq_teleop_host: str = None,
-        zmq_teleop_port: int = 5557,
+        zmq_teleop_port: int = 5556,
     ):
 
         self.text_to_speech = text_to_speech
