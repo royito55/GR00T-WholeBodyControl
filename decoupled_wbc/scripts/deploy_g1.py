@@ -449,6 +449,11 @@ class G1Deployment:
         else:
             cmd.append("--no-enable_gravity_compensation")
 
+        if self.config.no_wrist:
+            cmd.append("--no-wrist")
+        else:
+            cmd.append("--no-no-wrist")
+
         if not self._run_in_tmux("control", cmd, wait_time=3, pane_index=0):
             print("ERROR: Control loop failed to start!")
             self.cleanup()

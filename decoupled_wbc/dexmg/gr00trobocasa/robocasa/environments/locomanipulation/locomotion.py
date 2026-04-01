@@ -4,15 +4,15 @@ These tasks require navigation in addition to manipulation.
 """
 
 import numpy as np
-from robocasa.environments.locomanipulation.manip import ManipCubeToZone
+from robocasa.environments.locomanipulation.manip import ManipBlockToZoneRight
 from robocasa.utils.scene.configs import ObjectConfig, SamplingConfig
 from robocasa.utils.scene.scene import SceneObject
 from robocasa.utils.scene.success_criteria import IsRobotInRange, SuccessCriteria
 
 
-class LocoWalkToTable(ManipCubeToZone):
+class LocoWalkToTable(ManipBlockToZoneRight):
     """
-    Extends ManipCubeToZone with obstacles behind the robot.
+    Extends ManipBlockToZoneRight with obstacles behind the robot.
     Adds a large cube and large sphere that the robot must navigate around
     to reach the table and complete the cube-to-zone task.
     """

@@ -115,6 +115,9 @@ class BaseConfig(ArgsConfigTemplate):
     high_elbow_pose: bool = False
     """Enable high elbow pose configuration for default joint positions."""
 
+    no_wrist: bool = False
+    """Lock wrist joints (disable wrist control)."""
+
     verbose: bool = True
     """Whether to print verbose output."""
 
@@ -515,3 +518,6 @@ class DeploymentConfig(BaseConfig, ComposedCameraClientConfig):
 
     image_publish: bool = False
     """Enable image publishing in simulation loop (passed to run_sim_loop.py)"""
+
+    add_stereo_camera: bool = True
+    """Whether to add stereo camera for data collection. If False, only use a single ego view camera."""

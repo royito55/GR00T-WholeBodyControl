@@ -136,9 +136,9 @@ class Gr00tDataCollector:
                 self._print_and_say("Saved episode and back to idle state")
         elif key == "n":
             if self._episode_state.get_state() == self._episode_state.RECORDING:
-                self.data_exporter.save_episode_as_discarded()
+                self.data_exporter.skip_and_start_new_episode()
                 self._episode_state.reset_state()
-                self._print_and_say("Discarded episode")
+                self._print_and_say("Cancelled recording, episode not saved")
 
     def _add_data_frame(self):
         t_start = time.monotonic()
@@ -263,11 +263,10 @@ class Gr00tDataCollector:
 
         except KeyboardInterrupt:
             print("Data exporter terminated by user")
-            # The user will trigger a keyboard interrupt if there's something wrong,
-            # so we flag the ongoing episode as discarded
+            # Skip saving the current episode if user interrupts
             buffer_size = self.data_exporter.episode_buffer.get("size", 0)
             if buffer_size > 0:
-                self.data_exporter.save_episode_as_discarded()
+                self.data_exporter.skip_and_start_new_episode()
 
         finally:
             self.save_and_cleanup()

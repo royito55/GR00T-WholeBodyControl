@@ -37,7 +37,7 @@ class OpenCVStreamer(BaseStreamer):
             "right": zeros.copy(),
         }
 
-        # Initialize with open fingers
+        # Initialize with open fingers (0.0 in UDP format = open, inverted to 1.0 in sim)
         self._latest_finger_data = {
             "left": np.zeros(3, dtype=np.float32),  # [thumb, index, middle]
             "right": np.zeros(3, dtype=np.float32),
@@ -47,7 +47,9 @@ class OpenCVStreamer(BaseStreamer):
         self.current_base_height = 0.74  # Standing height
         self.toggle_data_collection_last = False
         self.toggle_data_abort_last = False
-        self.toggle_activation_last = False
+        self.activate_teleop_last = False  # For callback 1
+        self.deactivate_teleop_last = False  # For callbacks 3 and 4
+        self.reset_env_and_policy_last = False  # For callback 5
         self.is_activated = False  # Track if policy has been activated
 
     def start_streaming(self):
@@ -85,7 +87,9 @@ class OpenCVStreamer(BaseStreamer):
         self.current_base_height = 0.74
         self.toggle_data_collection_last = False
         self.toggle_data_abort_last = False
-        self.toggle_activation_last = False
+        self.activate_teleop_last = False
+        self.deactivate_teleop_last = False
+        self.reset_env_and_policy_last = False
         self.is_activated = False
 
     def _listen(self):
@@ -98,9 +102,9 @@ class OpenCVStreamer(BaseStreamer):
                     if arr.shape[0] == 21:
                         # Parse the data (copy to avoid buffer issues)
                         self._latest_wrist_data["left"] = arr[:7].copy()
-                        self._latest_finger_data["left"] = arr[7:10].copy()
+                        # self._latest_finger_data["left"] = arr[7:10].copy()
                         self._latest_wrist_data["right"] = arr[10:17].copy()
-                        self._latest_finger_data["right"] = arr[17:20].copy()
+                        # self._latest_finger_data["right"] = arr[17:20].copy()
                         callback_number = int(arr[20])
 
                         # Keep wrist in default orientation for testing
@@ -113,17 +117,30 @@ class OpenCVStreamer(BaseStreamer):
                         self._latest_wrist_data["right"][5] = 0.0
                         self._latest_wrist_data["right"][6] = 1.0
 
+                        # Keep fingers open for testing (0.0 = open in UDP, inverted to 1.0 in sim)
+                        self._latest_finger_data = {
+                            "left": np.zeros(3, dtype=np.float32),  # [thumb, index, middle]
+                            "right": np.zeros(3, dtype=np.float32),
+                        }
+
                         # Handle callbacks
                         if callback_number == 1:
-                            print("[OpenCVStreamer] START callback received - Activating teleop")
-                            self.toggle_activation_last = True
-                            self.toggle_data_collection_last = True
+                            print("[OpenCVStreamer] ACTIVATE teleop callback received")
+                            self.activate_teleop_last = True
                         elif callback_number == 2:
-                            print("[OpenCVStreamer] STOP callback received")
-                            self.toggle_data_abort_last = True
+                            print("[OpenCVStreamer] START recording callback received")
+                            self.toggle_data_collection_last = True
                         elif callback_number == 3:
+                            print("[OpenCVStreamer] SAVE recording callback received")
+                            self.toggle_data_collection_last = True
+                        elif callback_number == 4:
+                            print("[OpenCVStreamer] DISCARD recording callback received")
+                            self.toggle_data_abort_last = True
+                        elif callback_number == 5:
                             print("[OpenCVStreamer] RESET callback received")
-                            self.reset_status()
+                            self.deactivate_teleop_last = True  # Trigger deactivation event
+                            self.reset_env_and_policy_last = True  # Trigger environment reset
+                            
                 except Exception as e:
                     print(f"[OpenCVStreamer] Error parsing data: {e}")
             except BlockingIOError:
@@ -163,20 +180,38 @@ class OpenCVStreamer(BaseStreamer):
         # Generate finger data
         left_fingers = self._generate_finger_data("left")
         right_fingers = self._generate_finger_data("right")
-        # Toggle events (edge detection)
-        toggle_activation_tmp = self.toggle_activation_last
+        
+        # Edge detection for events
+        activate_teleop_tmp = self.activate_teleop_last
+        deactivate_teleop_tmp = self.deactivate_teleop_last
         toggle_data_collection_tmp = self.toggle_data_collection_last
         toggle_data_abort_tmp = self.toggle_data_abort_last
+        reset_env_and_policy_tmp = self.reset_env_and_policy_last
 
         toggle_activation = False
         toggle_data_collection = False
         toggle_data_abort = False
+        reset_env_and_policy = False
 
-        if toggle_activation_tmp:
-            toggle_activation = True
-            self.toggle_activation_last = False
-            self.is_activated = not self.is_activated
-            print(f"[OpenCVStreamer] Teleop policy {'ACTIVATED' if self.is_activated else 'DEACTIVATED'}")
+        if activate_teleop_tmp:
+            # Callback 1: Activate teleop (not toggle, just activate)
+            if not self.is_activated:
+                toggle_activation = True
+                self.is_activated = True
+                print("[OpenCVStreamer] Teleop policy ACTIVATED")
+            else:
+                print("[OpenCVStreamer] Teleop already activated, ignoring")
+            self.activate_teleop_last = False
+
+        if deactivate_teleop_tmp:
+            # Callbacks 3 and 4: Deactivate teleop
+            if self.is_activated:
+                toggle_activation = True  # Send toggle event to deactivate
+                self.is_activated = False
+                print("[OpenCVStreamer] Teleop policy DEACTIVATED")
+            else:
+                print("[OpenCVStreamer] Teleop already deactivated, ignoring")
+            self.deactivate_teleop_last = False
 
         if toggle_data_collection_tmp:
             toggle_data_collection = True
@@ -186,12 +221,16 @@ class OpenCVStreamer(BaseStreamer):
             toggle_data_abort = True
             self.toggle_data_abort_last = False
 
+        if reset_env_and_policy_tmp:
+            reset_env_and_policy = True
+            self.reset_env_and_policy_last = False
+
         return StreamerOutput(
             ik_data={
                 "left_wrist": left_wrist_T,
                 "right_wrist": right_wrist_T,
-                "left_fingers": {"position": left_fingers},
-                "right_fingers": {"position": right_fingers},
+                # "left_fingers": {"position": left_fingers},
+                # "right_fingers": {"position": right_fingers},
             },
             control_data={
                 "base_height_command": self.current_base_height,
@@ -203,6 +242,7 @@ class OpenCVStreamer(BaseStreamer):
             data_collection_data={
                 "toggle_data_collection": toggle_data_collection,
                 "toggle_data_abort": toggle_data_abort,
+                "reset_env_and_policy": reset_env_and_policy,
             },
             source="opencv",
         )
@@ -262,11 +302,12 @@ class OpenCVStreamer(BaseStreamer):
         middle_idx = 4 + 10
         ring_idx = 4 + 15
 
-        # Set positions (1.0 = closed, 0.0 = open)
-        fingertips[thumb_idx, 0, 3] = finger_values[0]
-        fingertips[index_idx, 0, 3] = finger_values[1]
-        fingertips[middle_idx, 0, 3] = finger_values[2]
-        fingertips[ring_idx, 0, 3] = 0.0  # Keep ring open
+        # Set positions (1.0 = OPEN, 0.0 = CLOSED) - based on joycon_streamer.py
+        # Invert the values: if UDP sends 0.0 (open) we need 1.0, if UDP sends 1.0 (closed) we need 0.0
+        fingertips[thumb_idx, 0, 3] = 1.0 - finger_values[0]
+        fingertips[index_idx, 0, 3] = 1.0 - finger_values[1]
+        fingertips[middle_idx, 0, 3] = 1.0 - finger_values[2]
+        fingertips[ring_idx, 0, 3] = 1.0  # Keep ring open
 
         return fingertips
 
