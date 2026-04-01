@@ -1,3 +1,4 @@
+import os
 import multiprocessing as mp
 import queue
 import time
@@ -13,6 +14,14 @@ from decoupled_wbc.control.main.constants import (
 )
 from decoupled_wbc.control.utils.keyboard_dispatcher import KEYBOARD_LISTENER_TOPIC_NAME
 
+ONE_SHOT_CONTROL_GOAL_KEYS = (
+    "toggle_policy_action",
+    "toggle_activation",
+    "toggle_data_collection",
+    "toggle_data_abort",
+    "reset_env_and_policy",
+)
+
 
 def _drain_latest(mp_queue, value):
     try:
@@ -23,6 +32,23 @@ def _drain_latest(mp_queue, value):
     mp_queue.put(value)
 
 
+def _drain_latest_control_goal(mp_queue, value):
+    latest = None
+    try:
+        while True:
+            latest = mp_queue.get_nowait()
+    except queue.Empty:
+        pass
+
+    if isinstance(latest, dict) and isinstance(value, dict):
+        merged = value.copy()
+        for key in ONE_SHOT_CONTROL_GOAL_KEYS:
+            merged[key] = bool(latest.get(key, False) or value.get(key, False))
+        value = merged
+
+    mp_queue.put(value)
+
+
 def _ros_bridge_worker(
     node_name: str,
     robot_config: dict,
@@ -30,7 +56,14 @@ def _ros_bridge_worker(
     control_goal_queue,
     keyboard_queue,
     stop_event,
+    zmq_control_goal_host: Optional[str] = None,
+    zmq_control_goal_port: int = 5556,
 ):
+    debug_zmq = os.getenv("GR00T_DEBUG_ZMQ", "").lower() in {"1", "true", "yes"}
+    debug_zmq_verbose = os.getenv("GR00T_DEBUG_ZMQ_VERBOSE", "").lower() in {"1", "true", "yes"}
+    last_debug_log_time = 0.0
+    last_zmq_msg_time = None
+
     from std_msgs.msg import String as RosStringMsg
 
     from decoupled_wbc.control.utils.ros_utils import (
@@ -50,7 +83,24 @@ def _ros_bridge_worker(
         'joint_safety_status': ROSMsgPublisher(JOINT_SAFETY_STATUS_TOPIC),
     }
     keyboard_listener_pub = node.create_publisher(RosStringMsg, KEYBOARD_LISTENER_TOPIC_NAME, 1)
-    control_goal_subscriber = ROSMsgSubscriber(CONTROL_GOAL_TOPIC)
+
+    if zmq_control_goal_host:
+        import msgpack
+        import msgpack_numpy as mnp
+        import zmq
+
+        _zmq_context = zmq.Context()
+        _zmq_sub = _zmq_context.socket(zmq.SUB)
+        _zmq_sub.setsockopt(zmq.SUBSCRIBE, b"")
+        _zmq_sub.setsockopt(zmq.RCVTIMEO, 10)
+        _zmq_sub.setsockopt(zmq.LINGER, 0)
+        _zmq_sub.connect(f"tcp://{zmq_control_goal_host}:{zmq_control_goal_port}")
+        print(f"Receiving control goals via ZMQ from tcp://{zmq_control_goal_host}:{zmq_control_goal_port}")
+        control_goal_subscriber = None
+    else:
+        _zmq_context = None
+        _zmq_sub = None
+        control_goal_subscriber = ROSMsgSubscriber(CONTROL_GOAL_TOPIC)
 
     def keyboard_input_callback(msg: RosStringMsg):
         _drain_latest(keyboard_queue, msg.data)
@@ -61,9 +111,54 @@ def _ros_bridge_worker(
 
     try:
         while ros_manager.ok() and not stop_event.is_set():
-            upper_body_cmd = control_goal_subscriber.get_msg()
-            if upper_body_cmd is not None:
-                _drain_latest(control_goal_queue, upper_body_cmd)
+            if _zmq_sub is not None:
+                try:
+                    payload = _zmq_sub.recv()
+                    upper_body_cmd = msgpack.unpackb(payload, object_hook=mnp.decode)
+                    _drain_latest_control_goal(control_goal_queue, upper_body_cmd)
+                    last_zmq_msg_time = time.monotonic()
+                    if debug_zmq:
+                        toggle_data_collection = upper_body_cmd.get("toggle_data_collection")
+                        toggle_data_abort = upper_body_cmd.get("toggle_data_abort")
+                        if toggle_data_collection or toggle_data_abort:
+                            print(
+                                "[ZMQ RECORD] "
+                                f"toggle_data_collection={bool(toggle_data_collection)} "
+                                f"toggle_data_abort={bool(toggle_data_abort)}"
+                            )
+                    if debug_zmq_verbose:
+                        now = time.monotonic()
+                        if now - last_debug_log_time >= 1.0:
+                            last_debug_log_time = now
+                            msg_ts = upper_body_cmd.get("timestamp")
+                            age_ms = None if msg_ts is None else (time.monotonic() - msg_ts) * 1000.0
+                            navigate_cmd = upper_body_cmd.get("navigate_cmd")
+                            base_height = upper_body_cmd.get("base_height_command")
+                            wrist_pose = upper_body_cmd.get("wrist_pose")
+                            target_upper = upper_body_cmd.get("target_upper_body_pose")
+                            toggle_data_collection = upper_body_cmd.get("toggle_data_collection")
+                            toggle_data_abort = upper_body_cmd.get("toggle_data_abort")
+                            age_str = "unknown" if age_ms is None else f"{age_ms:.1f}"
+                            print(
+                                "[ZMQ DEBUG VERBOSE] "
+                                f"recv age_ms={age_str} "
+                                f"navigate_cmd={navigate_cmd} "
+                                f"base_height={base_height} "
+                                f"toggle_data_collection={toggle_data_collection} "
+                                f"toggle_data_abort={toggle_data_abort} "
+                                f"wrist_pose_len={0 if wrist_pose is None else len(wrist_pose)} "
+                                f"target_upper_len={0 if target_upper is None else len(target_upper)}"
+                            )
+                except zmq.Again:
+                    if debug_zmq_verbose and last_zmq_msg_time is None:
+                        now = time.monotonic()
+                        if now - last_debug_log_time >= 1.0:
+                            last_debug_log_time = now
+                            print("[ZMQ DEBUG VERBOSE] waiting for first control goal over ZMQ")
+            else:
+                upper_body_cmd = control_goal_subscriber.get_msg()
+                if upper_body_cmd is not None:
+                    _drain_latest_control_goal(control_goal_queue, upper_body_cmd)
 
             try:
                 command, payload = command_queue.get(timeout=0.01)
@@ -86,6 +181,9 @@ def _ros_bridge_worker(
             node.destroy_subscription(keyboard_subscription)
         except Exception:
             pass
+        if _zmq_sub is not None:
+            _zmq_sub.close()
+            _zmq_context.term()
         ros_manager.shutdown()
 
 
@@ -95,9 +193,13 @@ class ROSProcessBridge:
         node_name: str,
         robot_config: dict,
         start_method: str = 'spawn',
+        zmq_control_goal_host: Optional[str] = None,
+        zmq_control_goal_port: int = 5556,
     ):
         self.node_name = node_name
         self.robot_config = robot_config
+        self.zmq_control_goal_host = zmq_control_goal_host
+        self.zmq_control_goal_port = zmq_control_goal_port
         self.mp_context = mp.get_context(start_method)
         self.command_queue = self.mp_context.Queue()
         self.control_goal_queue = self.mp_context.Queue(maxsize=1)
@@ -118,6 +220,8 @@ class ROSProcessBridge:
                 self.control_goal_queue,
                 self.keyboard_queue,
                 self.stop_event,
+                self.zmq_control_goal_host,
+                self.zmq_control_goal_port,
             ),
             daemon=True,
         )

@@ -202,6 +202,11 @@ source .venv_teleop/bin/activate
 ```bash
 python decoupled_wbc/control/main/teleop/run_g1_control_loop.py --interface real --robot-variant g1_23dof_compat --no-with-hands
 ```
+If `run_teleop_policy_loop.py` is run from a different PC:
+```bash
+python decoupled_wbc/control/main/teleop/run_g1_control_loop.py --interface real --robot-variant g1_23dof_compat --no-with-hands --zmq-control-goal-host 192.168.123.222 --zmq-control-goal-port 5556
+```
+
 * Wait for robot to set arms at 90º, set feet on ground, press `]`
 ## Camera driver
 ```bash
@@ -218,13 +223,14 @@ python decoupled_wbc/control/sensor/ros2_zmq_camera_bridge.py
 python decoupled_wbc/control/main/teleop/run_camera_viewer.py --camera_host localhost --camera_port 5555 --fps 20.0
 ```
 ## PICO teleop
-Sometimes the XRoboToolkit service must be explictly ran:
+Start the XRoboToolkit PC service after the Docker container is up:
 ```bash
-/opt/apps/roboticsservice/runService.sh
+bash /opt/apps/roboticsservice/runService.sh
 ```
-Then run the teleop program:
+* This is the service under `/opt/apps` that the Pico teleop stack expects.
+
 ```bash
-python decoupled_wbc/control/main/teleop/run_teleop_policy_loop.py --hand_control_device=pico --body_control_device=pico
+python decoupled_wbc/control/main/teleop/run_teleop_policy_loop.py --hand_control_device=pico --body_control_device=pico --zmq-publish-port 5556
 ```
 * In PICO, run `XRobotics` App.
 	* Select robot IP in popup.

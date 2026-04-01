@@ -231,7 +231,12 @@ class BaseConfig(ArgsConfigTemplate):
 class ControlLoopConfig(BaseConfig):
     """Config for running the G1 control loop."""
 
-    pass
+    zmq_control_goal_host: Optional[str] = None
+    """If set, receive control goals via ZMQ SUB from this host IP instead of ROS2.
+    Set to the teleop PC IP (e.g. 192.168.123.222) when running across machines."""
+
+    zmq_control_goal_port: int = 5556
+    """Port for the ZMQ control goal subscription."""
 
 
 @dataclass
@@ -256,6 +261,10 @@ class TeleopConfig(BaseConfig):
 
     binary_hand_ik: bool = True
     """Whether to use binary IK."""
+
+    zmq_publish_port: Optional[int] = None
+    """If set, publish teleop commands via ZMQ PUB on this port so remote machines can subscribe.
+    The robot's run_g1_control_loop.py should use --zmq-control-goal-host with this machine's IP."""
 
 
 @dataclass
@@ -311,6 +320,13 @@ class DataExporterConfig(BaseConfig, ComposedCameraClientConfig):
 
     add_stereo_camera: bool = True
     """Whether to add stereo camera for data collection. If False, only use a signle ego view camera."""
+
+    zmq_teleop_host: Optional[str] = None
+    """IP of the machine running run_teleop_policy_loop.py. When set, A/B button presses are received
+    directly from the teleop ZMQ stream instead of via the ROS /Gr00tKeyboardListener topic."""
+
+    zmq_teleop_port: int = 5556
+    """ZMQ port to subscribe to for teleop commands (must match zmq_publish_port on the teleop loop)."""
 
 
 @dataclass

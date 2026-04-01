@@ -68,6 +68,7 @@ class BodyCommandSender:
         self._debug_send_count = 0
         self._debug_last_send_log_time = 0.0
         self._debug_last_missing_mode_log_time = 0.0
+        self._last_cmd_q = None
 
     def InitLowCmd(self):
         # h1/go2:
@@ -155,7 +156,17 @@ class BodyCommandSender:
                 f"motor0_q={cmd.q:.4f}, motor0_dq={cmd.dq:.4f}, "
                 f"motor0_kp={cmd.kp:.2f}, motor0_kd={cmd.kd:.2f}"
             )
+            if self._last_cmd_q is None:
+                print("[BodyCommandSender] cmd_q delta: first publish")
+            else:
+                delta = cmd_q - self._last_cmd_q
+                print(
+                    "[BodyCommandSender] cmd_q delta: "
+                    f"norm={np.linalg.norm(delta):.4f}, "
+                    f"max={np.max(np.abs(delta)):.4f}"
+                )
             self._debug_last_send_log_time = now
+        self._last_cmd_q = cmd_q.copy()
 
 
 def make_hand_mode(motor_index: int) -> int:

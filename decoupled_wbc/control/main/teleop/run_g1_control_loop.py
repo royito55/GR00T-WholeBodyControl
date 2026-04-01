@@ -1,3 +1,4 @@
+import os
 from copy import deepcopy
 import time
 
@@ -64,6 +65,9 @@ class BridgeKeyboardDispatcher:
 
 
 def main(config: ControlLoopConfig):
+    debug_zmq = os.getenv("GR00T_DEBUG_ZMQ", "").lower() in {"1", "true", "yes"}
+    debug_zmq_verbose = os.getenv("GR00T_DEBUG_ZMQ_VERBOSE", "").lower() in {"1", "true", "yes"}
+    last_debug_log_time = 0.0
     ros_bridge = None
     env = None
     dispatcher = None
@@ -78,7 +82,12 @@ def main(config: ControlLoopConfig):
         waist_location=waist_location, high_elbow_pose=config.high_elbow_pose
     )
 
-    ros_bridge = ROSProcessBridge(node_name=CONTROL_NODE_NAME, robot_config=config.to_dict())
+    ros_bridge = ROSProcessBridge(
+        node_name=CONTROL_NODE_NAME,
+        robot_config=config.to_dict(),
+        zmq_control_goal_host=config.zmq_control_goal_host,
+        zmq_control_goal_port=config.zmq_control_goal_port,
+    )
     ros_bridge.start()
 
     env = G1Env(
@@ -136,6 +145,41 @@ def main(config: ControlLoopConfig):
                     if upper_body_cmd:
                         wbc_goal = upper_body_cmd.copy()
                         last_teleop_cmd = upper_body_cmd.copy()
+
+                        # Remote teleop commands may come from another machine, so any
+                        # target_time based on that machine's monotonic clock is invalid here.
+                        # Re-anchor interpolation targets onto the local control-loop clock.
+                        if config.zmq_control_goal_host:
+                            remote_target_time = wbc_goal.get("target_time")
+                            if isinstance(remote_target_time, list):
+                                step_dt = 1.0 / config.control_frequency
+                                wbc_goal["target_time"] = [
+                                    t_now + step_dt * (idx + 1)
+                                    for idx, _ in enumerate(remote_target_time)
+                                ]
+                            else:
+                                wbc_goal["target_time"] = t_now + (1.0 / config.control_frequency)
+
+                        if debug_zmq and (
+                            wbc_goal.get("toggle_data_collection", False)
+                            or wbc_goal.get("toggle_data_abort", False)
+                        ):
+                            print(
+                                "[CONTROL RECORD] "
+                                f"toggle_data_collection={bool(wbc_goal.get('toggle_data_collection', False))} "
+                                f"toggle_data_abort={bool(wbc_goal.get('toggle_data_abort', False))}"
+                            )
+                        if debug_zmq_verbose and (t_now - last_debug_log_time) >= 1.0:
+                            last_debug_log_time = t_now
+                            print(
+                                "[CONTROL DEBUG VERBOSE] "
+                                f"consumed navigate_cmd={wbc_goal.get('navigate_cmd')} "
+                                f"base_height={wbc_goal.get('base_height_command')} "
+                                f"toggle_activation={wbc_goal.get('toggle_activation')} "
+                                f"toggle_policy_action={wbc_goal.get('toggle_policy_action')} "
+                                f"toggle_data_collection={wbc_goal.get('toggle_data_collection')} "
+                                f"toggle_data_abort={wbc_goal.get('toggle_data_abort')}"
+                            )
                         if config.ik_indicator:
                             env.set_ik_indicator(upper_body_cmd)
                     # Send goal to policy
@@ -202,6 +246,11 @@ def main(config: ControlLoopConfig):
                     if key.endswith("_image"):
                         del msg[key]
 
+                now = time.time()
+                msg["timestamps"] = {
+                    "main_loop": now,
+                    "proprio": now,
+                }
                 if last_teleop_cmd:
                     msg.update(
                         {
@@ -213,10 +262,6 @@ def main(config: ControlLoopConfig):
                             "navigate_command": last_teleop_cmd.get(
                                 "navigate_cmd", DEFAULT_NAV_CMD
                             ),
-                            "timestamps": {
-                                "main_loop": time.time(),
-                                "proprio": time.time(),
-                            },
                         }
                     )
                 ros_bridge.publish_state(msg)

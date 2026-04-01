@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<CycloneDDS>
+  <Domain Id="any">
+    <General>
+      <AllowMulticast>false</AllowMulticast>
+      <Interfaces>
+        <NetworkInterface address="192.168.123.164" priority="default" multicast="false"/>
+      </Interfaces>
+    </General>
+    <Discovery>
+      <Peers>
+        <Peer Address="192.168.123.164"/>
+        <Peer Address="192.168.123.222"/>
+      </Peers>
+    </Discovery>
+  </Domain>
+</CycloneDDS>
