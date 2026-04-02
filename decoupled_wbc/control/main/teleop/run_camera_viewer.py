@@ -20,6 +20,9 @@ Usage Examples:
 3. Custom output directory:
    python run_camera_viewer.py --output-path ./my_recordings --camera-host localhost
 
+4. Display only ego_view camera (optimized):
+   python run_camera_viewer.py --camera-host localhost --cameras ego_view
+
 Controls:
 - R key: Start/Stop recording
 - Q key: Quit application
@@ -63,6 +66,9 @@ class CameraViewerConfig(ComposedCameraClientConfig):
 
     codec: str = "mp4v"
     """Video codec to use for saving (e.g., 'mp4v', 'XVID')."""
+
+    cameras: Optional[list[str]] = None
+    """List of camera names to display/record. If None, uses all available cameras. Example: ['ego_view']"""
 
 
 ArgsConfig = CameraViewerConfig
@@ -109,6 +115,13 @@ def main(config: ArgsConfig):
             raise Exception("Failed to get sample image")
 
     camera_titles = _get_camera_titles(_sample_image)
+    
+    # Filter cameras if specified
+    if config.cameras is not None:
+        camera_titles = [title for title in camera_titles if title in config.cameras]
+        if not camera_titles:
+            raise ValueError(f"No matching cameras found. Available: {_get_camera_titles(_sample_image)}, Requested: {config.cameras}")
+        print(f"Filtering to cameras: {camera_titles}")
 
     # Setup output directory
     if config.output_path is None:

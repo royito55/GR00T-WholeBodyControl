@@ -8,7 +8,6 @@
 # Options:
 #   --build           Build Docker image
 #   --clean           Clean containers
-#   --cpu             Build/run without NVIDIA runtime requirements
 #   --deploy          Run in deploy mode
 #   --install         Pull prebuilt Docker image
 #   --push            Push built image to Docker Hub
@@ -26,7 +25,6 @@ set -e
 # Default values
 BUILD=false
 CLEAN=false
-CPU_ONLY=false
 DEPLOY=false
 INSTALL=false
 # Flag to push the built Docker image to Docker Hub
@@ -44,7 +42,6 @@ EXTRA_ARGS=()
 PROJECT_NAME="decoupled_wbc"
 PROJECT_SLUG=$(echo "$PROJECT_NAME" | tr '[:upper:]' '[:lower:]')
 REMOTE_IMAGE="nvgear/gr00t_wbc:latest"
-LOCAL_ARM64_BASE_IMAGE="local/${PROJECT_SLUG}-ros-2:arm64"
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -55,10 +52,6 @@ while [[ $# -gt 0 ]]; do
             ;;
         --clean)
             CLEAN=true
-            shift
-            ;;
-        --cpu)
-            CPU_ONLY=true
             shift
             ;;
         --deploy)
@@ -182,12 +175,12 @@ function clean_container {
     echo "Cleaning up Docker containers..."
     
     # Stop containers
-    docker stop $DEPLOY_CONTAINER 2>/dev/null || true
-    docker stop $BASH_CONTAINER 2>/dev/null || true
+    sudo docker stop $DEPLOY_CONTAINER 2>/dev/null || true
+    sudo docker stop $BASH_CONTAINER 2>/dev/null || true
     # Remove containers
     echo "Removing containers..."
-    docker rm $DEPLOY_CONTAINER 2>/dev/null || true
-    docker rm $BASH_CONTAINER 2>/dev/null || true
+    sudo docker rm $DEPLOY_CONTAINER 2>/dev/null || true
+    sudo docker rm $BASH_CONTAINER 2>/dev/null || true
     echo "Containers cleaned!"
 }
 
@@ -195,7 +188,7 @@ function clean_container {
 # Function to install Docker Buildx if needed
 function install_docker_buildx {
     # Check if Docker Buildx is already installed
-    if docker buildx version &> /dev/null; then
+    if sudo docker buildx version &> /dev/null; then
         echo "Docker Buildx is already installed."
         return 0
     fi
@@ -212,13 +205,13 @@ function install_docker_buildx {
     BUILDX_VERSION=${BUILDX_VERSION:-v0.13.1}
     
     # Download and install for both user and root
-    curl -L "https://github.com/docker/buildx/releases/download/${BUILDX_VERSION}/buildx-${BUILDX_VERSION}.${BUILDX_ARCH}" -o ~/.docker/cli-plugins/docker-buildx
+    curl -L "https://github.com/docker/buil(venv) roberto@RobertoLegion-docker:~/Projects/GR00T-WholeBodyControl-Rodrigo$ trap 'tmux kill-session -t g1_deployment' QUIT; export DECOUPLED_WBC_TMUX_SESSION=g1_deployment; /home/roberto/venv/bin/python /home/roberto/Projects/GR00T-WholeBodyControl-Rodrigo/decoupled_wbc/control/main/teleop/run_sim_loop.py --wbc_version gear_wbc --interface lo --simulator robocasa --sim_frequency 200 --env_name ManipBlockToZoneRightDC --camera_port 5555 --no-enable_waist --with_hands --enable_image_publish --enable_offscreen --enable_onscreendx/releases/download/${BUILDX_VERSION}/buildx-${BUILDX_VERSION}.${BUILDX_ARCH}" -o ~/.docker/cli-plugins/docker-buildx
     sudo cp ~/.docker/cli-plugins/docker-buildx /root/.docker/cli-plugins/docker-buildx
     chmod +x ~/.docker/cli-plugins/docker-buildx && sudo chmod +x /root/.docker/cli-plugins/docker-buildx
     
     # Create builder
-    docker buildx create --use --name mybuilder || true
-    docker buildx inspect --bootstrap
+    sudo docker buildx create --use --name mybuilder || true
+    sudo docker buildx inspect --bootstrap
     
     echo "Docker Buildx installation complete!"
 }
@@ -273,22 +266,20 @@ function install_nvidia_toolkit {
 function build_docker_image {
     echo "Building Docker image: $DEPLOY_CONTAINER"
 
-    if is_arm64; then
-        echo "ARM64 host detected, using local ARM64 base image: $LOCAL_ARM64_BASE_IMAGE"
-        docker build --network host --build-arg BASE_IMAGE=$LOCAL_ARM64_BASE_IMAGE             --build-arg USERNAME=$USERNAME             --build-arg USERID=$USERID             --build-arg HOME_DIR=$DOCKER_HOME_DIR             --build-arg WORKTREE_NAME=$WORKTREE_NAME             -t $DEPLOY_CONTAINER             -f "$SCRIPT_DIR/Dockerfile.deploy"             "$PROJECT_DIR"
-    else
-        docker buildx build --network host --build-arg USERNAME=$USERNAME             --build-arg USERID=$USERID             --build-arg HOME_DIR=$DOCKER_HOME_DIR             --build-arg WORKTREE_NAME=$WORKTREE_NAME             --cache-from $CACHE_FROM             -t $DEPLOY_CONTAINER             -f "$SCRIPT_DIR/Dockerfile.deploy"             --load             "$PROJECT_DIR"
-    fi
+    sudo docker buildx build \
+        --build-arg USERNAME=$USERNAME \
+        --build-arg USERID=$USERID \
+        --build-arg HOME_DIR=$DOCKER_HOME_DIR \
+        --build-arg WORKTREE_NAME=$WORKTREE_NAME \
+        --cache-from $CACHE_FROM \
+        -t $DEPLOY_CONTAINER \
+        -f "$SCRIPT_DIR/Dockerfile.deploy" \
+        --load \
+        "$PROJECT_DIR"
 
     # Tag for persistent cache
-    # docker tag $DEPLOY_CONTAINER $CACHE_FROM
+    # sudo docker tag $DEPLOY_CONTAINER $CACHE_FROM
     echo "Docker image build complete!"
-}
-
-function build_arm64_base_image {
-    echo "Building local ARM64 ROS 2 base image: $LOCAL_ARM64_BASE_IMAGE"
-    docker build --network host -t $LOCAL_ARM64_BASE_IMAGE         -f "$SCRIPT_DIR/Dockerfile.deploy.base"         "$PROJECT_DIR"
-    echo "Local ARM64 base image build complete!"
 }
 
 # Build function 
@@ -297,21 +288,12 @@ function build_with_cleanup {
     echo "Removing existing containers and images..."
     clean_container
     # Tag for persistent cache before deleting the image
-    docker tag $DEPLOY_CONTAINER $CACHE_FROM 2>/dev/null || true
-    docker rmi $DEPLOY_CONTAINER 2>/dev/null || true
+    sudo docker tag $DEPLOY_CONTAINER $CACHE_FROM 2>/dev/null || true
+    sudo docker rmi $DEPLOY_CONTAINER 2>/dev/null || true
     echo "Images cleaned!"
     
-    if is_arm64; then
-        if [ "$CPU_ONLY" != true ]; then
-            install_nvidia_toolkit
-        fi
-        build_arm64_base_image
-    else
-        install_docker_buildx
-        if [ "$CPU_ONLY" != true ]; then
-            install_nvidia_toolkit
-        fi
-    fi
+    install_docker_buildx
+    install_nvidia_toolkit
     build_docker_image
 }
 
@@ -319,9 +301,9 @@ function install_remote_image {
     echo "Installing Docker image from remote registry: $REMOTE_IMAGE"
     echo "Removing existing containers to ensure a clean install..."
     clean_container
-    docker pull "$REMOTE_IMAGE"
-    docker tag "$REMOTE_IMAGE" "$DEPLOY_CONTAINER"
-    docker tag "$REMOTE_IMAGE" "$CACHE_FROM" 2>/dev/null || true
+    sudo docker pull "$REMOTE_IMAGE"
+    sudo docker tag "$REMOTE_IMAGE" "$DEPLOY_CONTAINER"
+    sudo docker tag "$REMOTE_IMAGE" "$CACHE_FROM" 2>/dev/null || true
     echo "Docker image install complete!"
 }
 
@@ -342,8 +324,8 @@ fi
 
 if [ "$DOCKER_HUB_PUSH" = true ]; then
     echo "Pushing Docker image to Docker Hub: docker.io/${REMOTE_IMAGE}"
-    docker tag $DEPLOY_CONTAINER docker.io/${REMOTE_IMAGE}
-    docker push docker.io/${REMOTE_IMAGE}
+    sudo docker tag $DEPLOY_CONTAINER docker.io/${REMOTE_IMAGE}
+    sudo docker push docker.io/${REMOTE_IMAGE}
     echo "Docker image pushed to Docker Hub!"
     exit 0
 fi
@@ -370,42 +352,48 @@ setup_x11() {
 X11_ENABLED=false
 setup_x11 && X11_ENABLED=true
 
+# Detect whether the host X display is already backed by NVIDIA OpenGL.
+# If it is, PRIME offload env vars are unnecessary and can break GLX for some
+# apps (MuJoCo/GLFW), especially on non-:0 displays.
+host_display_is_nvidia() {
+    [ -n "$DISPLAY" ] || return 1
+    command -v glxinfo >/dev/null 2>&1 || return 1
+    glxinfo -B 2>/dev/null | grep -qi '^OpenGL vendor string: *NVIDIA'
+}
+
 # Mount entire /dev directory for dynamic device access (including hidraw for joycon)
 # This allows JoyCon controllers to be detected even when connected after container launch
-chmod g+r+w /dev/input/* 2>/dev/null || true
+sudo chmod g+r+w /dev/input/*
 
 # Detect GPU setup and set appropriate environment variables
+echo "Detecting GPU setup..."
 GPU_ENV_VARS=""
-NVIDIA_ENV_VARS=""
 
-if [ "$CPU_ONLY" = true ]; then
-    echo "CPU-only mode enabled, skipping NVIDIA runtime setup..."
-else
-    echo "Detecting GPU setup..."
+# Check if we have both integrated and discrete GPUs (hybrid/Optimus setup)
+HAS_AMD_GPU=$(lspci | grep -i "vga\|3d\|display" | grep -i amd | wc -l)
+HAS_INTEL_GPU=$(lspci | grep -i "vga\|3d\|display" | grep -i intel | wc -l)
+HAS_NVIDIA_GPU=$(lspci | grep -i "vga\|3d\|display" | grep -i nvidia | wc -l)
 
-    # Check if we have both integrated and discrete GPUs (hybrid/Optimus setup)
-    HAS_AMD_GPU=$(lspci | grep -i "vga\|3d\|display" | grep -i amd | wc -l)
-    HAS_INTEL_GPU=$(lspci | grep -i "vga\|3d\|display" | grep -i intel | wc -l)
-    HAS_NVIDIA_GPU=$(lspci | grep -i "vga\|3d\|display" | grep -i nvidia | wc -l)
-
-    if [[ "$HAS_INTEL_GPU" -gt 0 ]] || [[ "$HAS_AMD_GPU" -gt 0 ]] && [[ "$HAS_NVIDIA_GPU" -gt 0 ]]; then
-        echo "Detected hybrid GPU setup (Intel/AMD integrated + NVIDIA discrete)"
-        echo "Setting NVIDIA Optimus environment variables for proper rendering offload..."
-        GPU_ENV_VARS="-e __NV_PRIME_RENDER_OFFLOAD=1 \
-        -e __VK_LAYER_NV_optimus=NVIDIA_only"
-    fi
-
-    if is_arm64; then
-        echo "Detected ARM64 architecture (Jetson Orin), using device access instead of nvidia runtime..."
-        GPU_RUNTIME_ARGS="--device /dev/nvidia0 --device /dev/nvidiactl --device /dev/nvidia-modeset --device /dev/nvidia-uvm --device /dev/nvidia-uvm-tools"
+if [[ "$HAS_INTEL_GPU" -gt 0 ]] || [[ "$HAS_AMD_GPU" -gt 0 ]] && [[ "$HAS_NVIDIA_GPU" -gt 0 ]]; then
+    echo "Detected hybrid GPU setup (Intel/AMD integrated + NVIDIA discrete)"
+    if host_display_is_nvidia; then
+        echo "Host DISPLAY=$DISPLAY already uses NVIDIA OpenGL; not enabling PRIME offload vars."
+        GPU_ENV_VARS=""
     else
-        GPU_RUNTIME_ARGS="--gpus all --runtime=nvidia"
+        echo "Setting NVIDIA Optimus environment variables for rendering offload..."
+        GPU_ENV_VARS="-e __NV_PRIME_RENDER_OFFLOAD=1 \
+    -e __VK_LAYER_NV_optimus=NVIDIA_only"
     fi
+else
+    GPU_ENV_VARS=""
+fi
 
-    NVIDIA_ENV_VARS="-e NVIDIA_VISIBLE_DEVICES=all \
-    -e NVIDIA_DRIVER_CAPABILITIES=graphics,compute,utility \
-    -e __GLX_VENDOR_LIBRARY_NAME=nvidia \
-    -e LIBGL_ALWAYS_INDIRECT=0"
+# Set GPU runtime based on architecture
+if is_arm64; then
+    echo "Detected ARM64 architecture (Jetson Orin), using device access instead of nvidia runtime..."
+    GPU_RUNTIME_ARGS="--device /dev/nvidia0 --device /dev/nvidiactl --device /dev/nvidia-modeset --device /dev/nvidia-uvm --device /dev/nvidia-uvm-tools"
+else
+    GPU_RUNTIME_ARGS="--gpus all --runtime=nvidia"
 fi
 
 # Common Docker run parameters
@@ -418,12 +406,14 @@ DOCKER_RUN_ARGS="--hostname $HOSTNAME \
     --privileged \
     --device=/dev \
     $GPU_ENV_VARS \
-    $NVIDIA_ENV_VARS \
     -p 5678:5678 \
     -e DISPLAY=$DISPLAY \
+    -e NVIDIA_VISIBLE_DEVICES=all \
+    -e NVIDIA_DRIVER_CAPABILITIES=graphics,compute,utility \
+    -e __GLX_VENDOR_LIBRARY_NAME=nvidia \
+    -e LIBGL_ALWAYS_INDIRECT=0 \
     -e USERNAME=$USERNAME \
-    -e DECOUPLED_WBC_DIR="$DOCKER_HOME_DIR/Projects/$WORKTREE_NAME" \
-    -e PYTHONPATH="$DOCKER_HOME_DIR/Projects/$WORKTREE_NAME" \
+    -e GR00T_WBC_DIR="$DOCKER_HOME_DIR/Projects/$WORKTREE_NAME" \
     -v /dev/bus/usb:/dev/bus/usb \
     -v /tmp/.X11-unix:/tmp/.X11-unix \
     -v $HOME/.ssh:$DOCKER_HOME_DIR/.ssh \
@@ -447,11 +437,11 @@ if [ "$DEPLOY" = true ]; then
        
     # Clean up old processes and create a fresh deploy container
     # Remove existing deploy container if it exists
-    if docker ps -a --format '{{.Names}}' | grep -q "^$DEPLOY_CONTAINER$"; then
+    if sudo docker ps -a --format '{{.Names}}' | grep -q "^$DEPLOY_CONTAINER$"; then
         echo "Removing existing deploy container..."
-        docker rm -f $DEPLOY_CONTAINER
+        sudo docker rm -f $DEPLOY_CONTAINER
     fi
-    docker run -it --rm $DOCKER_RUN_ARGS \
+    sudo docker run -it --rm $DOCKER_RUN_ARGS \
         -w $DOCKER_HOME_DIR/Projects/$WORKTREE_NAME \
         --name $DEPLOY_CONTAINER \
         $DEPLOY_CONTAINER \
@@ -460,13 +450,13 @@ if [ "$DEPLOY" = true ]; then
         "${EXTRA_ARGS[@]}"
 else
     # Bash mode - use decoupled_wbc-bash-${USERNAME} container
-    if docker ps -a --format '{{.Names}}' | grep -q "^$BASH_CONTAINER$"; then
+    if sudo docker ps -a --format '{{.Names}}' | grep -q "^$BASH_CONTAINER$"; then
         echo "Bash container exists, starting it..."
-        docker start $BASH_CONTAINER > /dev/null
-        docker exec -it $BASH_CONTAINER /bin/bash
+        sudo docker start $BASH_CONTAINER > /dev/null
+        sudo docker exec -it $BASH_CONTAINER /bin/bash
     else
         echo "Creating new bash container with auto-install decoupled_wbc..."
-        docker run -it $DOCKER_RUN_ARGS \
+        sudo docker run -it $DOCKER_RUN_ARGS \
             -w $DOCKER_HOME_DIR/Projects/$WORKTREE_NAME \
             --name $BASH_CONTAINER \
             $DEPLOY_CONTAINER \

@@ -342,6 +342,7 @@ class G1Deployment:
             str(self.config.camera_port),
             "--fps",
             str(self.config.fps),
+            "--cameras ego_view",
         ]
 
         if not self._run_in_tmux("camera_viewer", cmd):
