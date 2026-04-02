@@ -162,7 +162,7 @@ class ManipAppleToPlateDC(ManipAppleToPlate):
     pass  # The LabEnvMixin will be added when registering
 
 
-class ManipCubeToZone(LMSimpleEnv, DexMGConfigHelper):
+class ManipBlockToZoneRight(LMSimpleEnv, DexMGConfigHelper):
     """
     Single table with cube and blue zone close together - no navigation required.
     Robot's lower body remains static throughout the task.
@@ -190,15 +190,15 @@ class ManipCubeToZone(LMSimpleEnv, DexMGConfigHelper):
             )
         )
         
-        self.cube = SceneObject(
+        self.block = SceneObject(
             ObjectConfig(
-                name="red_cube",
+                name="red_block",
                 mjcf_path="objects/blocks/red_block.xml",
                 static=False,
                 scale=1.0,
                 sampler_config=SamplingConfig(
                     x_range=np.array([-0.05, -0.05]),
-                    y_range=np.array([0.1, 0.1]),
+                    y_range=np.array([0.05, 0.05]),
                     rotation=np.array([0.0, 0.0]),
                     reference_pos=np.array([0.4, 0, self.table.mj_obj.top_offset[2]]),
                 ),
@@ -213,26 +213,26 @@ class ManipCubeToZone(LMSimpleEnv, DexMGConfigHelper):
                 static=True,
                 sampler_config=SamplingConfig(
                     x_range=np.array([0.0, 0.0]),
-                    y_range=np.array([-0.2, -0.2]),
+                    y_range=np.array([-0.25, -0.25]),
                     rotation=np.array([0.0, 0.0]),
                     reference_pos=np.array([0.4, 0, self.table.mj_obj.top_offset[2] + 0.001]),
                 ),
             )
         )
         
-        return [self.table, self.cube, self.zone]
+        return [self.table, self.block, self.zone]
 
     def _get_success_criteria(self) -> SuccessCriteria:
         # Success when red block is fully within the edges of the blue zone (in xy plane)
         # Using IsClose instead of IsInContact since zone has no collision mesh
-        return IsClose(self.cube, self.zone, max_distance=0.14, use_xy_only=True)
+        return IsClose(self.block, self.zone, max_distance=0.14, use_xy_only=True)
 
     def _get_instruction(self) -> str:
-        return "Push the red block to the blue zone."
+        return "Push the red block on the left to the blue zone on the right."
 
     def get_object(self):
         return dict(
-            cube=dict(obj_name=self.cube.mj_obj.root_body, obj_type="body"),
+            block=dict(obj_name=self.block.mj_obj.root_body, obj_type="body"),
             zone=dict(obj_name=self.zone.mj_obj.root_body, obj_type="body"),
         )
 
@@ -278,5 +278,65 @@ class ManipCubeToZone(LMSimpleEnv, DexMGConfigHelper):
         )
 
 
-class ManipCubeToZoneDC(ManipCubeToZone):
+class ManipBlockToZoneLeft(ManipBlockToZoneRight):
+    def _get_instruction(self) -> str:
+        return "Push the red block on the right to the blue zone on the left."
+
+    def _get_objects(self) -> list[SceneObject]:
+        # Reuse table from parent but create new block and zone with swapped positions
+        self.table = SceneObject(
+            ObjectConfig(
+                name="table",
+                mjcf_path="objects/omniverse/locomanip/lab_table/model.xml",
+                scale=1.0,
+                static=True,
+                sampler_config=SamplingConfig(
+                    x_range=np.array([0.0, 0.0]),
+                    y_range=np.array([0.0, 0.0]),
+                    reference_pos=np.array([0.5, 0, 0]),
+                    rotation=np.array([np.pi * 0.5, np.pi * 0.5]),
+                ),
+            )
+        )
+        
+        # Block on the right (swapped from parent)
+        self.block = SceneObject(
+            ObjectConfig(
+                name="red_block",
+                mjcf_path="objects/blocks/red_block.xml",
+                static=False,
+                scale=1.0,
+                sampler_config=SamplingConfig(
+                    x_range=np.array([-0.05, -0.05]),
+                    y_range=np.array([-0.05, -0.05]),  # Swapped: was [0.05, 0.05]
+                    rotation=np.array([0.0, 0.0]),
+                    reference_pos=np.array([0.4, 0, self.table.mj_obj.top_offset[2]]),
+                ),
+            )
+        )
+        
+        # Zone on the left (swapped from parent)
+        self.zone = SceneObject(
+            ObjectConfig(
+                name="blue_zone",
+                mjcf_path="objects/zones/blue_zone.xml",
+                scale=1.0,
+                static=True,
+                sampler_config=SamplingConfig(
+                    x_range=np.array([0.0, 0.0]),
+                    y_range=np.array([0.25, 0.25]),  # Swapped: was [-0.25, -0.25]
+                    rotation=np.array([0.0, 0.0]),
+                    reference_pos=np.array([0.4, 0, self.table.mj_obj.top_offset[2] + 0.001]),
+                ),
+            )
+        )
+        
+        return [self.table, self.block, self.zone]
+
+
+class ManipBlockToZoneRightDC(ManipBlockToZoneRight):
+    pass  # The LabEnvMixin will be added when registering
+
+
+class ManipBlockToZoneLeftDC(ManipBlockToZoneLeft):
     pass  # The LabEnvMixin will be added when registering

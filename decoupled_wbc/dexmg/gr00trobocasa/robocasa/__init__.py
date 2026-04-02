@@ -33,26 +33,24 @@ from robocasa.environments.locomanipulation.locomanip_pnp import (
     LMBottlePnP,
     LMBoxPnP,
 )
-from robocasa.environments.locomanipulation.locomanip_static import (
-    LMPnPAppleToPlateStatic,
-    LMPnPCubeToZoneStatic,
+
+from robocasa.environments.locomanipulation.manip import (
+    ManipAppleToPlate,
+    ManipBlockToZoneRight,
+    ManipBlockToZoneLeft,
 )
 
-# from robocasa.environments.locomanipulation.locomanip_dc import (
-#     LMNavPickBottleDC,
-#     LMPnPAppleToPlateDC,
-# )
-
-from decoupled_wbc.dexmg.gr00trobocasa.robocasa.environments.locomanipulation.manip import (
-    ManipAppleToPlate,
-    ManipCubeToZone,
+from robocasa.environments.locomanipulation.locomotion import (
+    LocoWalkToTable,
 )
 
 from robocasa.environments.locomanipulation.locomanip_dc import (
     LMNavPickBottleDC,
     LMPnPAppleToPlateDC,
-    LMPnPAppleToPlateStaticDC,
-    LMPnPCubeToZoneStaticDC,
+    ManipAppleToPlateDC,
+    ManipBlockToZoneRightDC,
+    ManipBlockToZoneLeftDC,
+    LocoWalkToTableDC,
 )
 
 # from robosuite.controllers import ALL_CONTROLLERS, load_controller_config
