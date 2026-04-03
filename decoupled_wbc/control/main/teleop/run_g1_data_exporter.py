@@ -104,6 +104,7 @@ class Gr00tDataCollector:
         self.obs_act_buffer = deque(maxlen=100)
         self.latest_image_msg = None
         self.latest_proprio_msg = None
+        self.last_processed_command = None  # Track last processed data collection command
 
         self.state_polling_rate = 1 / state_act_msg_frequency
         self.last_state_poll_time = time.monotonic()
@@ -125,7 +126,20 @@ class Gr00tDataCollector:
             print(message)
 
     def _check_keyboard_input(self):
+        # Check keyboard listener first
         key = self._keyboard_listener.read_msg()
+        
+        # Also check for data collection command in the latest state message (more reliable)
+        if self.latest_proprio_msg is not None:
+            data_collection_cmd = self.latest_proprio_msg.get("data_collection_command")
+            if data_collection_cmd and data_collection_cmd != self.last_processed_command:
+                key = data_collection_cmd
+                self.last_processed_command = data_collection_cmd
+                print(f"[DataExporter] Received data collection command from state message: {key}")
+            elif data_collection_cmd is None and self.last_processed_command is not None:
+                # Clear the last processed command when no command is present
+                self.last_processed_command = None
+        
         if key == "b":
             self._episode_state.change_state()
             if self._episode_state.get_state() == self._episode_state.RECORDING:

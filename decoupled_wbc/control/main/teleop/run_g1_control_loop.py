@@ -197,18 +197,19 @@ def main(config: ControlLoopConfig):
                     }
                     ros_bridge.publish_joint_safety_status(joint_safety_status_msg)
 
-                # Handle data collection signals directly instead of keyboard emulation
+                # Handle data collection signals - store for inclusion in state message
+                data_collection_signal = None
                 if wbc_goal.get("toggle_data_collection", False):
                     print("Toggle data collection signal received")
-                    keyboard_listener_pub.handle_keyboard_button("b")
+                    data_collection_signal = "b"
 
                 if wbc_goal.get("toggle_data_abort", False):
                     print("Abort data collection signal received")
-                    keyboard_listener_pub.handle_keyboard_button("n")
+                    data_collection_signal = "n"
 
                 if env.use_sim and wbc_goal.get("reset_env_and_policy", False):
                     print("Resetting sim environment and policy")
-                    # Directly reset the policy and environment instead of keyboard emulation
+                    # Directly reset the policy and environment
                     if hasattr(wbc_policy, 'reset'):
                         wbc_policy.reset()
                     env.reset()
@@ -247,6 +248,11 @@ def main(config: ControlLoopConfig):
                             },
                         }
                     )
+                
+                # Add data collection signal to state message for reliable communication
+                if data_collection_signal:
+                    msg["data_collection_command"] = data_collection_signal
+                
                 ros_bridge.publish_state(msg)
                 end_time = time.monotonic()
 
