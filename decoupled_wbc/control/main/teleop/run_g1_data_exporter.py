@@ -56,13 +56,13 @@ class TimingThresholdMonitor:
             self.failure_count += 1
             self.last_failure_time = time.monotonic()
 
-        if self.is_threshold_exceeded():
-            print(
-                f"Time delta exception: {self.failure_count} failures in {self.reset_timeout_sec} seconds"
-                f", time delta: {time_delta}"
-            )
-            if self.raise_exception:
-                raise TimeDeltaException(self.failure_count, self.reset_timeout_sec)
+        # if self.is_threshold_exceeded():
+        #     print(
+        #         f"Time delta exception: {self.failure_count} failures in {self.reset_timeout_sec} seconds"
+        #         f", time delta: {time_delta}"
+        #     )
+        #     if self.raise_exception:
+        #         raise TimeDeltaException(self.failure_count, self.reset_timeout_sec)
 
     def is_threshold_exceeded(self):
         if self.failure_count >= self.max_failures:
