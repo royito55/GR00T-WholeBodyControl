@@ -121,9 +121,11 @@ class G1Deployment:
     def build_camera_viewer_cmd(self):
         if not self.config.view_camera:
             return None
+        # Choose viewer script based on config
+        viewer_script = "run_camera_viewer_fast.py" if self.config.use_fast_camera_viewer else "run_camera_viewer.py"
         return [
             sys.executable,
-            str(self.project_root / "control/main/teleop/run_camera_viewer.py"),
+            str(self.project_root / f"control/main/teleop/{viewer_script}"),
             "--camera_host",
             self.config.camera_host,
             "--camera_port",
@@ -327,22 +329,24 @@ class G1Deployment:
             print("ROS2 camera bridge started successfully.")
 
     def start_camera_viewer(self):
-        """Start the ROS rqt camera viewer"""
+        """Start the camera viewer (fast OpenCV version or standard matplotlib version)"""
         if not self.config.view_camera:
             return
 
-        print("Starting camera viewer...")
-        # Use rqt directly instead of ros2 run
+        viewer_type = "fast OpenCV" if self.config.use_fast_camera_viewer else "standard"
+        print(f"Starting camera viewer ({viewer_type})...")
+        # Choose viewer script based on config
+        viewer_script = "run_camera_viewer_fast.py" if self.config.use_fast_camera_viewer else "run_camera_viewer.py"
         cmd = [
             sys.executable,
-            str(self.project_root / "control/main/teleop/run_camera_viewer.py"),
+            str(self.project_root / f"control/main/teleop/{viewer_script}"),
             "--camera_host",
             self.config.camera_host,
             "--camera_port",
             str(self.config.camera_port),
             "--fps",
             str(self.config.fps),
-            "--cameras ego_view",
+            "--cameras", "ego_view",
         ]
 
         if not self._run_in_tmux("camera_viewer", cmd):

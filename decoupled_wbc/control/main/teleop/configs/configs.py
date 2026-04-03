@@ -502,6 +502,10 @@ class DeploymentConfig(BaseConfig, ComposedCameraClientConfig):
 
     view_camera: bool = True
     """Enable camera viewer"""
+    
+    use_fast_camera_viewer: bool = False
+    """Use optimized OpenCV-based camera viewer (run_camera_viewer_fast.py) instead of matplotlib version"""
+    
     # Webcam recording settings
     enable_webcam_recording: bool = True
     """Enable webcam recording for real robot deployment monitoring"""

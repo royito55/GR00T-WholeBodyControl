@@ -198,10 +198,12 @@ def main(config: ControlLoopConfig):
                     ros_bridge.publish_joint_safety_status(joint_safety_status_msg)
 
                 if wbc_goal.get("toggle_data_collection", False):
-                    dispatcher.handle_key("c")
+                    print("Starting recording")
+                    dispatcher.handle_key("b")
 
                 if wbc_goal.get("toggle_data_abort", False):
-                    dispatcher.handle_key("x")
+                    print("Discarding recording")
+                    dispatcher.handle_key("n")
 
                 if env.use_sim and wbc_goal.get("reset_env_and_policy", False):
                     print("Resetting sim environment and policy")
