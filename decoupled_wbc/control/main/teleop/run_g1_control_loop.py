@@ -197,17 +197,21 @@ def main(config: ControlLoopConfig):
                     }
                     ros_bridge.publish_joint_safety_status(joint_safety_status_msg)
 
+                # Handle data collection signals directly instead of keyboard emulation
                 if wbc_goal.get("toggle_data_collection", False):
-                    print("Starting recording")
-                    dispatcher.handle_key("b")
+                    print("Toggle data collection signal received")
+                    keyboard_listener_pub.handle_keyboard_button("b")
 
                 if wbc_goal.get("toggle_data_abort", False):
-                    print("Discarding recording")
-                    dispatcher.handle_key("n")
+                    print("Abort data collection signal received")
+                    keyboard_listener_pub.handle_keyboard_button("n")
 
                 if env.use_sim and wbc_goal.get("reset_env_and_policy", False):
                     print("Resetting sim environment and policy")
-                    dispatcher.handle_key("k")
+                    # Directly reset the policy and environment instead of keyboard emulation
+                    if hasattr(wbc_policy, 'reset'):
+                        wbc_policy.reset()
+                    env.reset()
 
                     upper_body_cmd = {
                         "target_upper_body_pose": obs["q"][
