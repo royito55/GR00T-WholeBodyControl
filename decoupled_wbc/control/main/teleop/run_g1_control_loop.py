@@ -2,6 +2,7 @@ from copy import deepcopy
 import time
 
 import tyro
+import numpy as np
 
 from decoupled_wbc.control.envs.g1.g1_env import G1Env
 from decoupled_wbc.control.main.teleop.configs.configs import ControlLoopConfig
@@ -108,6 +109,23 @@ def main(config: ControlLoopConfig):
     dispatcher.register(keyboard_estop)
     dispatcher.start()
 
+    # Get wrist joint indices for locking if --no-wrist is enabled
+    wrist_joint_names = [
+        # "left_wrist_roll_joint",
+        # "left_wrist_pitch_joint",
+        "left_wrist_yaw_joint",
+        # "right_wrist_roll_joint",
+        # "right_wrist_pitch_joint",
+        "right_wrist_yaw_joint"
+    ]
+    idx_wrist = np.asarray([robot_model.dof_index(name) for name in wrist_joint_names], dtype=np.int64)
+
+    # Auto-initialize: reset sim and activate lower body policy
+    print("Auto-initializing: resetting sim (k) and activating lower body policy (])...")
+    dispatcher.handle_key("k")  # Reset sim
+    dispatcher.handle_key("]")  # Activate lower body policy
+    print("Auto-initialization complete.")
+
     last_teleop_cmd = None
     try:
         while True:
@@ -148,6 +166,10 @@ def main(config: ControlLoopConfig):
                 # Measure policy action calculation time
                 with telemetry.timer("policy_action"):
                     wbc_action = wbc_policy.get_action(time=t_now)
+
+                # Lock wrist joints if --no-wrist is enabled
+                if config.no_wrist:
+                    wbc_action["q"][idx_wrist] = robot_model.default_body_pose[idx_wrist]
 
                 # Measure action queue time
                 with telemetry.timer("queue_action"):
