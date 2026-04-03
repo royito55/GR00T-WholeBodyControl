@@ -131,6 +131,7 @@ class Gr00tDataCollector:
             if self._episode_state.get_state() == self._episode_state.RECORDING:
                 self._print_and_say(f"Started recording {self.current_episode_index}")
             elif self._episode_state.get_state() == self._episode_state.NEED_TO_SAVE:
+                self._print_and_say("====================\n *** SAVE detected *** \n====================")
                 self._print_and_say("Stopping recording, preparing to save")
             elif self._episode_state.get_state() == self._episode_state.IDLE:
                 self._print_and_say("Saved episode and back to idle state")
@@ -206,7 +207,7 @@ class Gr00tDataCollector:
         if self._episode_state.get_state() == self._episode_state.NEED_TO_SAVE:
             self.data_exporter.save_episode()
             self.timing_threshold_monitor.reset()
-            self._print_and_say("====================\n *** Finished saving episode *** \n====================")
+            self._print_and_say("=================================\n *** Finished saving episode *** \n=================================")
             self._episode_state.change_state()
 
         return True
