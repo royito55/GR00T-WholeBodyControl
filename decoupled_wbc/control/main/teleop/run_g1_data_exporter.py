@@ -135,25 +135,35 @@ class Gr00tDataCollector:
             if data_collection_cmd and data_collection_cmd != self.last_processed_command:
                 key = data_collection_cmd
                 self.last_processed_command = data_collection_cmd
-                print(f"[DataExporter] Received data collection command from state message: {key}")
+                print(f"[DataExporter] Received and processing data collection command: '{key}'")
             elif data_collection_cmd is None and self.last_processed_command is not None:
                 # Clear the last processed command when no command is present
                 self.last_processed_command = None
         
-        if key == "b":
-            self._episode_state.change_state()
+        # Handle separate keys: r=start, t=save, x=discard
+        if key == "r":
+            # START recording
+            if self._episode_state.get_state() == self._episode_state.IDLE:
+                self._episode_state.change_state()  # IDLE -> RECORDING
+                self._print_and_say(f"Started recording episode {self.current_episode_index}")
+            else:
+                self._print_and_say("Cannot start recording - not in IDLE state")
+        elif key == "t":
+            # SAVE recording
             if self._episode_state.get_state() == self._episode_state.RECORDING:
-                self._print_and_say(f"Started recording {self.current_episode_index}")
-            elif self._episode_state.get_state() == self._episode_state.NEED_TO_SAVE:
-                self._print_and_say("====================\n *** SAVE detected *** \n====================")
+                self._episode_state.change_state()  # RECORDING -> NEED_TO_SAVE
+                self._print_and_say("=======================\n *** SAVE detected *** \n=======================")
                 self._print_and_say("Stopping recording, preparing to save")
-            elif self._episode_state.get_state() == self._episode_state.IDLE:
-                self._print_and_say("Saved episode and back to idle state")
-        elif key == "n":
+            else:
+                self._print_and_say("Cannot save - not currently recording")
+        elif key == "x":
+            # DISCARD recording
             if self._episode_state.get_state() == self._episode_state.RECORDING:
                 self.data_exporter.skip_and_start_new_episode()
                 self._episode_state.reset_state()
-                self._print_and_say("Cancelled recording, episode not saved")
+                self._print_and_say("Discarded recording, episode not saved")
+            else:
+                self._print_and_say("Cannot discard - not currently recording")
 
     def _add_data_frame(self):
         t_start = time.monotonic()

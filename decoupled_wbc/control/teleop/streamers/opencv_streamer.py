@@ -17,7 +17,12 @@ class OpenCVStreamer(BaseStreamer):
     - Left fingers: [thumb, index, middle] (3 floats, 0=open, 1=closed)
     - Right wrist: [x, y, z, qx, qy, qz, qw] (7 floats)
     - Right fingers: [thumb, index, middle] (3 floats, 0=open, 1=closed)
-    - Callback number: 1=START, 2=STOP, 3=RESET (1 float)
+    - Callback number: (1 float)
+        1 = ACTIVATE teleop
+        2 = START recording (sends 'r')
+        3 = SAVE recording (sends 't')
+        4 = DISCARD recording (sends 'x')
+        5 = RESET sim and policy
     """
 
     def __init__(self, udp_ip: str = "0.0.0.0", udp_port: int = 5005):
@@ -45,8 +50,9 @@ class OpenCVStreamer(BaseStreamer):
 
         # Navigation and control state
         self.current_base_height = 0.74  # Standing height
-        self.toggle_data_collection_last = False
-        self.toggle_data_abort_last = False
+        self.start_recording_last = False  # For callback 2 (START)
+        self.save_recording_last = False   # For callback 3 (SAVE)
+        self.discard_recording_last = False  # For callback 4 (DISCARD)
         self.activate_teleop_last = False  # For callback 1
         self.deactivate_teleop_last = False  # For callbacks 3 and 4
         self.reset_env_and_policy_last = False  # For callback 5
@@ -87,8 +93,9 @@ class OpenCVStreamer(BaseStreamer):
     def reset_status(self):
         """Reset internal state."""
         self.current_base_height = 0.74
-        self.toggle_data_collection_last = False
-        self.toggle_data_abort_last = False
+        self.start_recording_last = False
+        self.save_recording_last = False
+        self.discard_recording_last = False
         self.activate_teleop_last = False
         self.deactivate_teleop_last = False
         self.reset_env_and_policy_last = False
@@ -134,15 +141,15 @@ class OpenCVStreamer(BaseStreamer):
                             self.prev_callback_number = callback_number
                         elif callback_number == 2 and callback_number != self.prev_callback_number:
                             print("[OpenCVStreamer] START recording callback received")
-                            self.toggle_data_collection_last = True
+                            self.start_recording_last = True
                             self.prev_callback_number = callback_number
                         elif callback_number == 3 and callback_number != self.prev_callback_number:
                             print("[OpenCVStreamer] SAVE recording callback received")
-                            self.toggle_data_collection_last = True
+                            self.save_recording_last = True
                             self.prev_callback_number = callback_number
                         elif callback_number == 4 and callback_number != self.prev_callback_number:
                             print("[OpenCVStreamer] DISCARD recording callback received")
-                            self.toggle_data_abort_last = True
+                            self.discard_recording_last = True
                             self.prev_callback_number = callback_number
                         elif callback_number == 5 and callback_number != self.prev_callback_number:
                             print("[OpenCVStreamer] RESET callback received")
@@ -193,13 +200,15 @@ class OpenCVStreamer(BaseStreamer):
         # Edge detection for events
         activate_teleop_tmp = self.activate_teleop_last
         deactivate_teleop_tmp = self.deactivate_teleop_last
-        toggle_data_collection_tmp = self.toggle_data_collection_last
-        toggle_data_abort_tmp = self.toggle_data_abort_last
+        start_recording_tmp = self.start_recording_last
+        save_recording_tmp = self.save_recording_last
+        discard_recording_tmp = self.discard_recording_last
         reset_env_and_policy_tmp = self.reset_env_and_policy_last
 
         toggle_activation = False
-        toggle_data_collection = False
-        toggle_data_abort = False
+        start_recording = False
+        save_recording = False
+        discard_recording = False
         reset_env_and_policy = False
 
         if activate_teleop_tmp:
@@ -222,13 +231,17 @@ class OpenCVStreamer(BaseStreamer):
                 print("[OpenCVStreamer] Teleop already deactivated, ignoring")
             self.deactivate_teleop_last = False
 
-        if toggle_data_collection_tmp:
-            toggle_data_collection = True
-            self.toggle_data_collection_last = False
+        if start_recording_tmp:
+            start_recording = True
+            self.start_recording_last = False
 
-        if toggle_data_abort_tmp:
-            toggle_data_abort = True
-            self.toggle_data_abort_last = False
+        if save_recording_tmp:
+            save_recording = True
+            self.save_recording_last = False
+
+        if discard_recording_tmp:
+            discard_recording = True
+            self.discard_recording_last = False
 
         if reset_env_and_policy_tmp:
             reset_env_and_policy = True
@@ -249,8 +262,9 @@ class OpenCVStreamer(BaseStreamer):
                 "toggle_activation": toggle_activation,  # Send the toggle EVENT, not the state
             },
             data_collection_data={
-                "toggle_data_collection": toggle_data_collection,
-                "toggle_data_abort": toggle_data_abort,
+                "start_recording": start_recording,
+                "save_recording": save_recording,
+                "discard_recording": discard_recording,
                 "reset_env_and_policy": reset_env_and_policy,
             },
             source="opencv",

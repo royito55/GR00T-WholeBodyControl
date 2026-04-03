@@ -73,6 +73,10 @@ def main(config: ControlLoopConfig):
 
     # Initialize telemetry
     telemetry = Telemetry(window_size=100)
+    
+    # Track data collection signal persistence
+    data_collection_signal_persist = None
+    data_collection_signal_frames = 0
 
     waist_location = "lower_and_upper_body" if config.enable_waist else "lower_body"
     robot_model = instantiate_g1_robot_model(
@@ -197,22 +201,44 @@ def main(config: ControlLoopConfig):
                     }
                     ros_bridge.publish_joint_safety_status(joint_safety_status_msg)
 
-                # Handle data collection signals - store for inclusion in state message
-                data_collection_signal = None
-                if wbc_goal.get("toggle_data_collection", False):
-                    print("Toggle data collection signal received")
-                    data_collection_signal = "b"
+                # Handle data collection signals with persistence
+                # New signals from OpenCV streamer: r=start, t=save, x=discard
+                if wbc_goal.get("start_recording", False):
+                    print("START recording signal received")
+                    data_collection_signal_persist = "r"
+                    data_collection_signal_frames = 10  # Send for 10 frames (~0.2s at 50Hz)
 
-                if wbc_goal.get("toggle_data_abort", False):
-                    print("Abort data collection signal received")
-                    data_collection_signal = "n"
+                if wbc_goal.get("save_recording", False):
+                    print("SAVE recording signal received")
+                    data_collection_signal_persist = "t"
+                    data_collection_signal_frames = 10
+
+                if wbc_goal.get("discard_recording", False):
+                    print("DISCARD recording signal received")
+                    data_collection_signal_persist = "x"
+                    data_collection_signal_frames = 10
+
+                # Determine current signal to send
+                data_collection_signal = None
+                if data_collection_signal_frames > 0:
+                    data_collection_signal = data_collection_signal_persist
+                    data_collection_signal_frames -= 1
+                    if data_collection_signal_frames == 0:
+                        data_collection_signal_persist = None
 
                 if env.use_sim and wbc_goal.get("reset_env_and_policy", False):
-                    print("Resetting sim environment and policy")
-                    # Directly reset the policy and environment
-                    if hasattr(wbc_policy, 'reset'):
-                        wbc_policy.reset()
-                    env.reset()
+                    print("Resetting entire sim environment and policy via dispatcher (same as 'k' key)")
+                    
+                    # Use dispatcher.handle_key("k") to reset exactly the same way as pressing 'k'
+                    # This ensures all registered listeners get the reset signal
+                    dispatcher.handle_key("k")
+                    
+                    # Give the reset time to complete
+                    time.sleep(0.5)
+                    
+                    # Get fresh observation after reset
+                    obs = env.observe()
+                    wbc_policy.set_observation(obs)
 
                     upper_body_cmd = {
                         "target_upper_body_pose": obs["q"][
@@ -223,8 +249,6 @@ def main(config: ControlLoopConfig):
                         "navigate_cmd": DEFAULT_NAV_CMD,
                     }
                     last_teleop_cmd = upper_body_cmd.copy()
-
-                    time.sleep(0.5)
 
                 msg = deepcopy(obs)
                 for key in obs.keys():

@@ -164,6 +164,7 @@ class TeleopPolicy(Policy):
                 print("Teleop policy calibrated")
             else:
                 print("Stopping teleop policy")
+                self.reset()
 
     @contextmanager
     def activate(self):
