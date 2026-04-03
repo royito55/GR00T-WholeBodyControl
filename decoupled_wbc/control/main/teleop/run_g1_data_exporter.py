@@ -206,7 +206,7 @@ class Gr00tDataCollector:
         if self._episode_state.get_state() == self._episode_state.NEED_TO_SAVE:
             self.data_exporter.save_episode()
             self.timing_threshold_monitor.reset()
-            self._print_and_say("Finished saving episode")
+            self._print_and_say("====================\n *** Finished saving episode *** \n====================")
             self._episode_state.change_state()
 
         return True
@@ -256,10 +256,10 @@ class Gr00tDataCollector:
                 self.rate.sleep()
 
                 # Log timing information if we missed our target frequency
-                if (end_time - t_start) > (1 / self.frequency):
-                    self.telemetry.log_timing_info(
-                        context="Data Exporter Loop Missed", threshold=0.001
-                    )
+                # if (end_time - t_start) > (1 / self.frequency):
+                #     self.telemetry.log_timing_info(
+                #         context="Data Exporter Loop Missed", threshold=0.001
+                #     )
 
         except KeyboardInterrupt:
             print("Data exporter terminated by user")

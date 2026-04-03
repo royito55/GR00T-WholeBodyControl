@@ -93,8 +93,8 @@ def main(config: TeleopConfig):
                     time.sleep(time_to_get_to_initial_pose)
                 iteration += 1
             end_time = time.monotonic()
-            if (end_time - t_start) > (1 / config.teleop_frequency):
-                telemetry.log_timing_info(context="Teleop Policy Loop Missed", threshold=0.001)
+            # if (end_time - t_start) > (1 / config.teleop_frequency):
+            #     telemetry.log_timing_info(context="Teleop Policy Loop Missed", threshold=0.001)
             rate.sleep()
 
     except ros_manager.exceptions() as e:

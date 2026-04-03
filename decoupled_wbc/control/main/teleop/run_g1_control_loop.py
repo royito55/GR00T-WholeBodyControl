@@ -254,10 +254,10 @@ def main(config: ControlLoopConfig):
 
             ros_bridge.sleep_to_rate(t_start, config.control_frequency)
 
-            if config.verbose_timing:
-                telemetry.log_timing_info(context="G1 Control Loop", threshold=0.0)
-            elif (end_time - t_start) > (1 / config.control_frequency) and not config.sim_sync_mode:
-                telemetry.log_timing_info(context="G1 Control Loop Missed", threshold=0.001)
+            # if config.verbose_timing:
+            #     telemetry.log_timing_info(context="G1 Control Loop", threshold=0.0)
+            # elif (end_time - t_start) > (1 / config.control_frequency) and not config.sim_sync_mode:
+            #     telemetry.log_timing_info(context="G1 Control Loop Missed", threshold=0.001)
 
     except KeyboardInterrupt:
         print("Control loop interrupted by user")
