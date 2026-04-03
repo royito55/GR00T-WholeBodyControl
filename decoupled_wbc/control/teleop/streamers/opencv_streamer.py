@@ -52,6 +52,8 @@ class OpenCVStreamer(BaseStreamer):
         self.reset_env_and_policy_last = False  # For callback 5
         self.is_activated = False  # Track if policy has been activated
 
+        self.prev_callback_number = 0
+
     def start_streaming(self):
         """Initialize UDP socket and start listening thread."""
         try:
@@ -124,23 +126,30 @@ class OpenCVStreamer(BaseStreamer):
                         }
 
                         # Handle callbacks
-                        if callback_number == 1:
+                        if callback_number == 0:
+                            self.prev_callback_number = 0 # Only when Handtracking is initialized
+                        elif callback_number == 1 and callback_number != self.prev_callback_number:
                             print("[OpenCVStreamer] ACTIVATE teleop callback received")
                             self.activate_teleop_last = True
-                        elif callback_number == 2:
+                            self.prev_callback_number = callback_number
+                        elif callback_number == 2 and callback_number != self.prev_callback_number:
                             print("[OpenCVStreamer] START recording callback received")
                             self.toggle_data_collection_last = True
-                        elif callback_number == 3:
+                            self.prev_callback_number = callback_number
+                        elif callback_number == 3 and callback_number != self.prev_callback_number:
                             print("[OpenCVStreamer] SAVE recording callback received")
                             self.toggle_data_collection_last = True
-                        elif callback_number == 4:
+                            self.prev_callback_number = callback_number
+                        elif callback_number == 4 and callback_number != self.prev_callback_number:
                             print("[OpenCVStreamer] DISCARD recording callback received")
                             self.toggle_data_abort_last = True
-                        elif callback_number == 5:
+                            self.prev_callback_number = callback_number
+                        elif callback_number == 5 and callback_number != self.prev_callback_number:
                             print("[OpenCVStreamer] RESET callback received")
                             self.deactivate_teleop_last = True  # Trigger deactivation event
                             self.reset_env_and_policy_last = True  # Trigger environment reset
-                            
+                            self.prev_callback_number = callback_number
+
                 except Exception as e:
                     print(f"[OpenCVStreamer] Error parsing data: {e}")
             except BlockingIOError:
