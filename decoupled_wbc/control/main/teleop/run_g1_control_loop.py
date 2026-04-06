@@ -229,11 +229,12 @@ def main(config: ControlLoopConfig):
                 if env.use_sim and wbc_goal.get("reset_env_and_policy", False):
                     print("Resetting entire sim environment and policy via dispatcher (same as 'k' key)")
                     
-                    # Use dispatcher.handle_key("k") to reset exactly the same way as pressing 'k'
-                    # This ensures all registered listeners get the reset signal
-                    dispatcher.handle_key("k")
+                    # Send reset signal multiple times to ensure delivery on slow hardware
+                    for retry in range(3):
+                        dispatcher.handle_key("k")
+                        time.sleep(0.1)  # Small delay between retries
                     
-                    # Give the reset time to complete
+                    # Wait for reset to complete
                     time.sleep(0.5)
                     
                     # Get fresh observation after reset
@@ -249,6 +250,7 @@ def main(config: ControlLoopConfig):
                         "navigate_cmd": DEFAULT_NAV_CMD,
                     }
                     last_teleop_cmd = upper_body_cmd.copy()
+                    print("Reset complete")
 
                 msg = deepcopy(obs)
                 for key in obs.keys():

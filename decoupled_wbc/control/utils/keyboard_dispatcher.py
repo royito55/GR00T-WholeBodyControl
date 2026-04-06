@@ -2,6 +2,7 @@ import os
 import subprocess
 import sys
 import threading
+from collections import deque
 
 import rclpy
 from sshkeyboard import listen_keyboard, stop_listening
@@ -202,16 +203,19 @@ class KeyboardListenerSubscriber:
         ros_manager = ROSManager()
         self.node = ros_manager.node
         self._create_node = False
-        self.subscriber = self.node.create_subscription(RosStringMsg, topic_name, self._callback, 1)
-        self._data = None
+        self.subscriber = self.node.create_subscription(RosStringMsg, topic_name, self._callback, 10)
+        # Use a deque to buffer multiple messages instead of single slot
+        self._message_queue = deque(maxlen=10)
 
     def _callback(self, msg: RosStringMsg):
-        self._data = msg.data
+        # Add to queue instead of overwriting
+        self._message_queue.append(msg.data)
 
     def read_msg(self):
-        data = self._data
-        self._data = None
-        return data
+        """Read oldest unprocessed message from queue."""
+        if self._message_queue:
+            return self._message_queue.popleft()
+        return None
 
 
 class KeyboardEStop:
