@@ -74,12 +74,8 @@ def main(config: ControlLoopConfig):
     # Initialize telemetry
     telemetry = Telemetry(window_size=100)
     
-    # Track data collection signal persistence
-    data_collection_signal_persist = None
-    data_collection_signal_frames = 0
-    
-    # Track reset signal persistence
-    reset_signal_frames = 0
+    # Track if we're currently processing a reset (to avoid retriggering)
+    reset_in_progress = False
 
     waist_location = "lower_and_upper_body" if config.enable_waist else "lower_body"
     robot_model = instantiate_g1_robot_model(
@@ -204,46 +200,16 @@ def main(config: ControlLoopConfig):
                     }
                     ros_bridge.publish_joint_safety_status(joint_safety_status_msg)
 
-                # Handle data collection signals with persistence
-                # New signals from OpenCV streamer: r=start, t=save, x=discard
-                if wbc_goal.get("start_recording", False):
-                    print("START recording signal received")
-                    data_collection_signal_persist = "r"
-                    data_collection_signal_frames = 50  # Send for 50 frames (~1s at 50Hz) to ensure 20Hz data exporter receives it
-
-                if wbc_goal.get("save_recording", False):
-                    print("SAVE recording signal received")
-                    data_collection_signal_persist = "t"
-                    data_collection_signal_frames = 50
-
-                if wbc_goal.get("discard_recording", False):
-                    print("DISCARD recording signal received")
-                    data_collection_signal_persist = "x"
-                    data_collection_signal_frames = 50
-
-                # Determine current signal to send
-                data_collection_signal = None
-                if data_collection_signal_frames > 0:
-                    data_collection_signal = data_collection_signal_persist
-                    data_collection_signal_frames -= 1
-                    if data_collection_signal_frames == 0:
-                        data_collection_signal_persist = None
-
+                # Handle environment and policy reset
                 if env.use_sim and wbc_goal.get("reset_env_and_policy", False):
-                    # Only start sending if not already sending (prevents resetting the counter)
-                    if reset_signal_frames == 0:
-                        print("Resetting entire sim environment and policy via dispatcher (same as 'k' key)")
-                        reset_signal_frames = 50  # Send for 50 frames (~1s at 50Hz)
-                
-                # Send persistent reset signal (similar to data collection signals)
-                if reset_signal_frames > 0:
-                    dispatcher.handle_key("k")
-                    reset_signal_frames -= 1
-                    
-                    # Only wait and reset state on the final frame
-                    if reset_signal_frames == 0:
-                        # Wait for reset to complete (longer wait for slow hardware)
-                        time.sleep(0.8)
+                    if not reset_in_progress:
+                        # Environment reset sent directly from OpenCVStreamer to async_env_server
+                        # Just wait here for env reset to complete, then reset policy
+                        reset_in_progress = True
+                        print("Policy reset triggered (env reset in progress via OpenCVStreamer -> async_env_server)")
+                        
+                        # Wait for environment reset to complete (~1s based on slow GPU performance)
+                        time.sleep(1.0)
                         
                         # Get fresh observation after reset
                         obs = env.observe()
@@ -258,7 +224,10 @@ def main(config: ControlLoopConfig):
                             "navigate_cmd": DEFAULT_NAV_CMD,
                         }
                         last_teleop_cmd = upper_body_cmd.copy()
-                        print("Reset complete")
+                        print("Policy reset complete")
+                else:
+                    # Clear flag when reset signal goes away
+                    reset_in_progress = False
 
                 msg = deepcopy(obs)
                 for key in obs.keys():
@@ -282,10 +251,6 @@ def main(config: ControlLoopConfig):
                             },
                         }
                     )
-                
-                # Add data collection signal to state message for reliable communication
-                if data_collection_signal:
-                    msg["data_collection_command"] = data_collection_signal
                 
                 ros_bridge.publish_state(msg)
                 end_time = time.monotonic()

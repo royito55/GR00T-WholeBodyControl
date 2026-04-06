@@ -6,6 +6,7 @@ from typing import Any, Dict, Tuple
 import mujoco
 import numpy as np
 import rclpy
+from std_msgs.msg import Empty
 
 from decoupled_wbc.control.envs.g1.sim.image_publish_utils import ImagePublishProcess
 from decoupled_wbc.control.envs.robocasa.utils.robocasa_env import (
@@ -79,6 +80,16 @@ class RoboCasaEnvServer:
         
         # Track last processed reset command for deduplication (same pattern as data collection)
         self.last_processed_reset_command = None
+        
+        # Subscribe to reset events from OpenCVStreamer
+        self.reset_requested = False
+        self.reset_request_lock = threading.Lock()
+        self._reset_subscriber = self.node.create_subscription(
+            Empty,
+            '/reset_sim_environment',
+            self._reset_callback,
+            10
+        )
 
         self.reset()
 
@@ -210,18 +221,30 @@ class RoboCasaEnvServer:
             self.sync_mode = sync_mode
             self.steps_per_action = steps_per_action
 
+    def _reset_callback(self, msg: Empty):
+        """Callback for reset messages from OpenCVStreamer"""
+        with self.reset_request_lock:
+            if not self.reset_requested:
+                self.reset_requested = True
+                print("\033[1;32m[Sim env]\033[0m Reset request received from OpenCVStreamer")
+    
     def _check_keyboard_input(self):
-        """Check for keyboard input and handle state transitions"""
-        # Read ONE message (not draining - let deduplication handle it)
-        key = self.keyboard_listener.read_msg()
+        """Check for keyboard input and reset requests"""
+        # Check for direct reset request from OpenCVStreamer
+        with self.reset_request_lock:
+            if self.reset_requested:
+                self.reset_requested = False
+                print("\033[1;32m[Sim env]\033[0m Resetting sim environment (keeping viewer)")
+                self.reset()
+                return
         
-        # Process reset command with deduplication (same pattern as r/t/x in data exporter)
+        # Fallback: read keyboard message for manual 'k' key presses
+        key = self.keyboard_listener.read_msg()
         if key == "k" and key != self.last_processed_reset_command:
             self.last_processed_reset_command = key
-            print("\033[1;32m[Sim env]\033[0m Resetting sim environment (keeping viewer)")
+            print("\033[1;32m[Sim env]\033[0m Resetting sim environment via keyboard (keeping viewer)")
             self.reset()
         elif key != "k" and self.last_processed_reset_command is not None:
-            # Clear the last processed command when a different key is seen
             self.last_processed_reset_command = None
 
     def start(self):

@@ -3,7 +3,10 @@ import threading
 import time
 
 import numpy as np
+import rclpy
+from rclpy.node import Node
 from scipy.spatial.transform import Rotation as R
+from std_msgs.msg import Empty, String
 
 from decoupled_wbc.control.teleop.streamers.base_streamer import BaseStreamer, StreamerOutput
 
@@ -33,6 +36,34 @@ class OpenCVStreamer(BaseStreamer):
         self._socket_available = False
         self._running = False
         self._thread = None
+        
+        # Initialize ROS2 publisher for reset events
+        if not rclpy.ok():
+            rclpy.init()
+        
+        # Create or get existing node
+        try:
+            executor = rclpy.get_global_executor()
+            if executor and executor.get_nodes():
+                self._ros_node = executor.get_nodes()[0]
+            else:
+                self._ros_node = rclpy.create_node('opencv_streamer_node')
+        except:
+            self._ros_node = rclpy.create_node('opencv_streamer_node')
+        
+        # Create publisher for reset events
+        self._reset_publisher = self._ros_node.create_publisher(
+            Empty, 
+            '/reset_sim_environment', 
+            10
+        )
+        
+        # Create publisher for data collection commands (r/t/x)
+        self._data_collection_publisher = self._ros_node.create_publisher(
+            String,
+            '/data_collection_command',
+            10
+        )
 
         # Initialize with identity poses
         zeros = np.zeros(7, dtype=np.float32)
@@ -140,21 +171,30 @@ class OpenCVStreamer(BaseStreamer):
                             self.activate_teleop_last = True
                             self.prev_callback_number = callback_number
                         elif callback_number == 2 and callback_number != self.prev_callback_number:
-                            print("[OpenCVStreamer] START recording callback received")
-                            self.start_recording_last = True
+                            print("[OpenCVStreamer] START recording callback received, publishing 'r' command")
+                            msg = String()
+                            msg.data = "r"
+                            self._data_collection_publisher.publish(msg)
                             self.prev_callback_number = callback_number
                         elif callback_number == 3 and callback_number != self.prev_callback_number:
-                            print("[OpenCVStreamer] SAVE recording callback received")
-                            self.save_recording_last = True
+                            print("[OpenCVStreamer] SAVE recording callback received, publishing 't' command")
+                            msg = String()
+                            msg.data = "t"
+                            self._data_collection_publisher.publish(msg)
                             self.prev_callback_number = callback_number
                         elif callback_number == 4 and callback_number != self.prev_callback_number:
-                            print("[OpenCVStreamer] DISCARD recording callback received")
-                            self.discard_recording_last = True
+                            print("[OpenCVStreamer] DISCARD recording callback received, publishing 'x' command")
+                            msg = String()
+                            msg.data = "x"
+                            self._data_collection_publisher.publish(msg)
                             self.prev_callback_number = callback_number
                         elif callback_number == 5 and callback_number != self.prev_callback_number:
-                            print("[OpenCVStreamer] RESET callback received")
+                            print("[OpenCVStreamer] RESET callback received, publishing reset message")
+                            # Publish reset message directly to sim environment
+                            msg = Empty()
+                            self._reset_publisher.publish(msg)
                             self.deactivate_teleop_last = True  # Trigger deactivation event
-                            self.reset_env_and_policy_last = True  # Trigger environment reset
+                            self.reset_env_and_policy_last = True  # For policy reset in control loop
                             self.prev_callback_number = callback_number
 
                 except Exception as e:
@@ -231,16 +271,13 @@ class OpenCVStreamer(BaseStreamer):
                 print("[OpenCVStreamer] Teleop already deactivated, ignoring")
             self.deactivate_teleop_last = False
 
+        # Data collection commands now sent directly via ROS2
+        # These flags are no longer needed but kept for backward compatibility
         if start_recording_tmp:
-            start_recording = True
             self.start_recording_last = False
-
         if save_recording_tmp:
-            save_recording = True
             self.save_recording_last = False
-
         if discard_recording_tmp:
-            discard_recording = True
             self.discard_recording_last = False
 
         if reset_env_and_policy_tmp:
@@ -262,9 +299,8 @@ class OpenCVStreamer(BaseStreamer):
                 "toggle_activation": toggle_activation,  # Send the toggle EVENT, not the state
             },
             data_collection_data={
-                "start_recording": start_recording,
-                "save_recording": save_recording,
-                "discard_recording": discard_recording,
+                # Data collection commands (r/t/x) now sent via direct ROS2 topic
+                # Only reset_env_and_policy still goes through control loop
                 "reset_env_and_policy": reset_env_and_policy,
             },
             source="opencv",

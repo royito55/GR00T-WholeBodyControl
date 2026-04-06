@@ -6,6 +6,7 @@ import time
 import numpy as np
 import rclpy
 import tyro
+from std_msgs.msg import String
 
 from decoupled_wbc.control.main.constants import ROBOT_CONFIG_TOPIC, STATE_TOPIC_NAME
 from decoupled_wbc.control.main.teleop.configs.configs import DataExporterConfig
@@ -104,7 +105,16 @@ class Gr00tDataCollector:
         self.obs_act_buffer = deque(maxlen=100)
         self.latest_image_msg = None
         self.latest_proprio_msg = None
-        self.last_processed_command = None  # Track last processed data collection command
+        
+        # Subscribe to data collection commands from OpenCVStreamer
+        self.data_collection_command_pending = None
+        self.data_collection_lock = threading.Lock()
+        self._data_collection_subscriber = self.node.create_subscription(
+            String,
+            '/data_collection_command',
+            self._data_collection_callback,
+            10
+        )
 
         self.state_polling_rate = 1 / state_act_msg_frequency
         self.last_state_poll_time = time.monotonic()
@@ -118,6 +128,14 @@ class Gr00tDataCollector:
     def current_episode_index(self):
         return self.data_exporter.episode_buffer["episode_index"]
 
+    def _data_collection_callback(self, msg: String):
+        """Callback for data collection commands from OpenCVStreamer"""
+        with self.data_collection_lock:
+            command = msg.data
+            if command in ['r', 't', 'x']:
+                self.data_collection_command_pending = command
+                print(f"[DataExporter] Received data collection command via ROS2: '{command}'")
+    
     def _print_and_say(self, message: str, say: bool = True):
         """Helper to use TextToSpeech print_and_say or fallback to print."""
         if self.text_to_speech is not None:
@@ -126,16 +144,20 @@ class Gr00tDataCollector:
             print(message)
 
     def _check_keyboard_input(self):
-        # Check keyboard listener first
-        key = self._keyboard_listener.read_msg()
+        key = None
         
-        # Also check for data collection command in the latest state message (more reliable)
-        if self.latest_proprio_msg is not None:
-            data_collection_cmd = self.latest_proprio_msg.get("data_collection_command")
-            if data_collection_cmd and data_collection_cmd != self.last_processed_command:
-                key = data_collection_cmd
-                self.last_processed_command = data_collection_cmd
-                print(f"[DataExporter] Received and processing data collection command: '{key}'")
+        # Priority 1: Check direct ROS2 data collection command from OpenCVStreamer
+        with self.data_collection_lock:
+            if self.data_collection_command_pending:
+                key = self.data_collection_command_pending
+                self.data_collection_command_pending = None
+                print(f"[DataExporter] Processing ROS2 data collection command: '{key}'")
+        
+        # Priority 2: Check keyboard listener for manual key presses
+        if key is None:
+            key = self._keyboard_listener.read_msg()
+            if key:
+                print(f"[DataExporter] Processing keyboard input: '{key}'")
         
         # Handle separate keys: r=start, t=save, x=discard
         if key == "r":
