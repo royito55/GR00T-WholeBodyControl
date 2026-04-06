@@ -77,6 +77,9 @@ def main(config: ControlLoopConfig):
     # Track data collection signal persistence
     data_collection_signal_persist = None
     data_collection_signal_frames = 0
+    
+    # Track reset signal persistence
+    reset_signal_frames = 0
 
     waist_location = "lower_and_upper_body" if config.enable_waist else "lower_body"
     robot_model = instantiate_g1_robot_model(
@@ -206,17 +209,17 @@ def main(config: ControlLoopConfig):
                 if wbc_goal.get("start_recording", False):
                     print("START recording signal received")
                     data_collection_signal_persist = "r"
-                    data_collection_signal_frames = 10  # Send for 10 frames (~0.2s at 50Hz)
+                    data_collection_signal_frames = 50  # Send for 50 frames (~1s at 50Hz) to ensure 20Hz data exporter receives it
 
                 if wbc_goal.get("save_recording", False):
                     print("SAVE recording signal received")
                     data_collection_signal_persist = "t"
-                    data_collection_signal_frames = 10
+                    data_collection_signal_frames = 50
 
                 if wbc_goal.get("discard_recording", False):
                     print("DISCARD recording signal received")
                     data_collection_signal_persist = "x"
-                    data_collection_signal_frames = 10
+                    data_collection_signal_frames = 50
 
                 # Determine current signal to send
                 data_collection_signal = None
@@ -227,28 +230,34 @@ def main(config: ControlLoopConfig):
                         data_collection_signal_persist = None
 
                 if env.use_sim and wbc_goal.get("reset_env_and_policy", False):
-                    print("Resetting entire sim environment and policy via dispatcher (same as 'k' key)")
-                    
-                    # Send reset signal once - the queue ensures delivery
+                    if reset_signal_frames == 0:  # Only print once
+                        print("Resetting entire sim environment and policy via dispatcher (same as 'k' key)")
+                    reset_signal_frames = 50  # Send for 50 frames (~1s at 50Hz)
+                
+                # Send persistent reset signal (similar to data collection signals)
+                if reset_signal_frames > 0:
                     dispatcher.handle_key("k")
+                    reset_signal_frames -= 1
                     
-                    # Wait for reset to complete (longer wait for slow hardware)
-                    time.sleep(0.8)
-                    
-                    # Get fresh observation after reset
-                    obs = env.observe()
-                    wbc_policy.set_observation(obs)
+                    # Only wait and reset state on the final frame
+                    if reset_signal_frames == 0:
+                        # Wait for reset to complete (longer wait for slow hardware)
+                        time.sleep(0.8)
+                        
+                        # Get fresh observation after reset
+                        obs = env.observe()
+                        wbc_policy.set_observation(obs)
 
-                    upper_body_cmd = {
-                        "target_upper_body_pose": obs["q"][
-                            robot_model.get_joint_group_indices("upper_body")
-                        ],
-                        "wrist_pose": DEFAULT_WRIST_POSE,
-                        "base_height_command": DEFAULT_BASE_HEIGHT,
-                        "navigate_cmd": DEFAULT_NAV_CMD,
-                    }
-                    last_teleop_cmd = upper_body_cmd.copy()
-                    print("Reset complete")
+                        upper_body_cmd = {
+                            "target_upper_body_pose": obs["q"][
+                                robot_model.get_joint_group_indices("upper_body")
+                            ],
+                            "wrist_pose": DEFAULT_WRIST_POSE,
+                            "base_height_command": DEFAULT_BASE_HEIGHT,
+                            "navigate_cmd": DEFAULT_NAV_CMD,
+                        }
+                        last_teleop_cmd = upper_body_cmd.copy()
+                        print("Reset complete")
 
                 msg = deepcopy(obs)
                 for key in obs.keys():

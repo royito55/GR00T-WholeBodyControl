@@ -136,9 +136,6 @@ class Gr00tDataCollector:
                 key = data_collection_cmd
                 self.last_processed_command = data_collection_cmd
                 print(f"[DataExporter] Received and processing data collection command: '{key}'")
-            elif data_collection_cmd is None and self.last_processed_command is not None:
-                # Clear the last processed command when no command is present
-                self.last_processed_command = None
         
         # Handle separate keys: r=start, t=save, x=discard
         if key == "r":

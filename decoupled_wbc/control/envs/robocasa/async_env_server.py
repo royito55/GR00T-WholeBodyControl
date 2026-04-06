@@ -76,6 +76,10 @@ class RoboCasaEnvServer:
 
         # Initialize keyboard listener for env reset
         self.keyboard_listener = KeyboardListenerSubscriber()
+        
+        # Track last reset time to deduplicate multiple 'k' messages
+        self.last_reset_time = 0
+        self.reset_cooldown = 0.5  # Minimum 0.5s between resets
 
         self.reset()
 
@@ -191,8 +195,13 @@ class RoboCasaEnvServer:
         """Check for keyboard input and handle state transitions"""
         key = self.keyboard_listener.read_msg()
         if key == "k":
-            print("\033[1;32m[Sim env]\033[0m Resetting sim environment")
-            self.reset()
+            # Deduplicate: only reset if enough time has passed since last reset
+            current_time = time.monotonic()
+            if current_time - self.last_reset_time >= self.reset_cooldown:
+                self.last_reset_time = current_time
+                print("\033[1;32m[Sim env]\033[0m Resetting sim environment (keeping viewer)")
+                self.reset(keep_viewer=True)
+            # else: silently ignore duplicate reset within cooldown period
 
     def start(self):
         """Function executed by the simulation thread"""
