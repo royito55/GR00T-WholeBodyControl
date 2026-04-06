@@ -79,7 +79,7 @@ class RoboCasaEnvServer:
         
         # Track last reset time to deduplicate multiple 'k' messages
         self.last_reset_time = 0
-        self.reset_cooldown = 0.5  # Minimum 0.5s between resets
+        self.reset_cooldown = 1.0  # Minimum 1.0s between resets
 
         self.reset()
 
@@ -135,33 +135,53 @@ class RoboCasaEnvServer:
             "info": None,
         }
 
-    def reset(self, **kwargs):
-        if self.viewer is not None:
+    def reset(self, keep_viewer=False):
+        """Reset environment, optionally keeping the viewer open.
+        
+        Args:
+            keep_viewer (bool): If True, keep existing viewer open
+        """
+        if self.viewer is not None and not keep_viewer:
             self.viewer.close()
 
-        obs, info = self.env.reset(**kwargs)
+        # If keeping viewer open, do a full MuJoCo data reset FIRST
+        if keep_viewer:
+            mujoco.mj_resetData(self.base_env.sim.model._model, self.base_env.sim.data._data)
+
+        obs, info = self.env.reset()
+        
+        # If keeping viewer, force scene reset to resample object positions
+        if keep_viewer and hasattr(self.base_env, 'scene'):
+            self.base_env.scene.reset()
+            mujoco.mj_forward(self.base_env.sim.model._model, self.base_env.sim.data._data)
+        
         self.caches["obs"] = obs
         self.caches["reward"] = 0
         self.caches["terminated"] = False
         self.caches["truncated"] = False
         self.caches["info"] = info
 
-        # initialize viewer
-        if self.onscreen:
+        if not keep_viewer:
+            mujoco.mj_forward(self.base_env.sim.model._model, self.base_env.sim.data._data)
+
+        # Initialize viewer (only if we closed it or it doesn't exist yet)
+        if self.onscreen and (self.viewer is None or not keep_viewer):
             self.viewer = mujoco.viewer.launch_passive(
                 self.base_env.sim.model._model,
                 self.base_env.sim.data._data,
                 show_left_ui=False,
                 show_right_ui=False,
             )
-            self.viewer.opt.geomgroup[0] = 0  # disable collision visualization
+            self.viewer.opt.geomgroup[0] = 0
             if self.render_camera is not None:
                 self.viewer.cam.type = mujoco.mjtCamera.mjCAMERA_FIXED
                 self.viewer.cam.fixedcamid = self.base_env.sim.model._model.cam(
                     self.render_camera
                 ).id
+        
+        if keep_viewer and self.viewer is not None:
+            self.viewer.sync()
 
-        # self.episode_state.reset_state()
         return obs, info
 
     @abstractmethod
@@ -193,14 +213,23 @@ class RoboCasaEnvServer:
 
     def _check_keyboard_input(self):
         """Check for keyboard input and handle state transitions"""
+        # Drain all keyboard messages from queue
+        has_reset_signal = False
         key = self.keyboard_listener.read_msg()
-        if key == "k":
+        while key is not None:
+            if key == "k":
+                has_reset_signal = True
+            # Read next message from queue
+            key = self.keyboard_listener.read_msg()
+        
+        # Only process reset once after draining all messages
+        if has_reset_signal:
             # Deduplicate: only reset if enough time has passed since last reset
             current_time = time.monotonic()
             if current_time - self.last_reset_time >= self.reset_cooldown:
                 self.last_reset_time = current_time
                 print("\033[1;32m[Sim env]\033[0m Resetting sim environment (keeping viewer)")
-                self.reset(keep_viewer=True)
+                self.reset()
             # else: silently ignore duplicate reset within cooldown period
 
     def start(self):
