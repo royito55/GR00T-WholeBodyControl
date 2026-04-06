@@ -230,9 +230,10 @@ def main(config: ControlLoopConfig):
                         data_collection_signal_persist = None
 
                 if env.use_sim and wbc_goal.get("reset_env_and_policy", False):
-                    if reset_signal_frames == 0:  # Only print once
+                    # Only start sending if not already sending (prevents resetting the counter)
+                    if reset_signal_frames == 0:
                         print("Resetting entire sim environment and policy via dispatcher (same as 'k' key)")
-                    reset_signal_frames = 50  # Send for 50 frames (~1s at 50Hz)
+                        reset_signal_frames = 50  # Send for 50 frames (~1s at 50Hz)
                 
                 # Send persistent reset signal (similar to data collection signals)
                 if reset_signal_frames > 0:

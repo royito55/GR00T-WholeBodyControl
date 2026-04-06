@@ -77,9 +77,8 @@ class RoboCasaEnvServer:
         # Initialize keyboard listener for env reset
         self.keyboard_listener = KeyboardListenerSubscriber()
         
-        # Track last reset time to deduplicate multiple 'k' messages
-        self.last_reset_time = 0
-        self.reset_cooldown = 1.0  # Minimum 1.0s between resets
+        # Track last processed reset command for deduplication (same pattern as data collection)
+        self.last_processed_reset_command = None
 
         self.reset()
 
@@ -213,24 +212,17 @@ class RoboCasaEnvServer:
 
     def _check_keyboard_input(self):
         """Check for keyboard input and handle state transitions"""
-        # Drain all keyboard messages from queue
-        has_reset_signal = False
+        # Read ONE message (not draining - let deduplication handle it)
         key = self.keyboard_listener.read_msg()
-        while key is not None:
-            if key == "k":
-                has_reset_signal = True
-            # Read next message from queue
-            key = self.keyboard_listener.read_msg()
         
-        # Only process reset once after draining all messages
-        if has_reset_signal:
-            # Deduplicate: only reset if enough time has passed since last reset
-            current_time = time.monotonic()
-            if current_time - self.last_reset_time >= self.reset_cooldown:
-                self.last_reset_time = current_time
-                print("\033[1;32m[Sim env]\033[0m Resetting sim environment (keeping viewer)")
-                self.reset()
-            # else: silently ignore duplicate reset within cooldown period
+        # Process reset command with deduplication (same pattern as r/t/x in data exporter)
+        if key == "k" and key != self.last_processed_reset_command:
+            self.last_processed_reset_command = key
+            print("\033[1;32m[Sim env]\033[0m Resetting sim environment (keeping viewer)")
+            self.reset(keep_viewer=True)
+        elif key != "k" and self.last_processed_reset_command is not None:
+            # Clear the last processed command when a different key is seen
+            self.last_processed_reset_command = None
 
     def start(self):
         """Function executed by the simulation thread"""
