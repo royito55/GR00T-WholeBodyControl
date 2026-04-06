@@ -229,13 +229,11 @@ def main(config: ControlLoopConfig):
                 if env.use_sim and wbc_goal.get("reset_env_and_policy", False):
                     print("Resetting entire sim environment and policy via dispatcher (same as 'k' key)")
                     
-                    # Send reset signal multiple times to ensure delivery on slow hardware
-                    for retry in range(3):
-                        dispatcher.handle_key("k")
-                        time.sleep(0.1)  # Small delay between retries
+                    # Send reset signal once - the queue ensures delivery
+                    dispatcher.handle_key("k")
                     
-                    # Wait for reset to complete
-                    time.sleep(0.5)
+                    # Wait for reset to complete (longer wait for slow hardware)
+                    time.sleep(0.8)
                     
                     # Get fresh observation after reset
                     obs = env.observe()
