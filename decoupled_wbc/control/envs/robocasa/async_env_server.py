@@ -219,7 +219,7 @@ class RoboCasaEnvServer:
         if key == "k" and key != self.last_processed_reset_command:
             self.last_processed_reset_command = key
             print("\033[1;32m[Sim env]\033[0m Resetting sim environment (keeping viewer)")
-            self.reset(keep_viewer=True)
+            self.reset()
         elif key != "k" and self.last_processed_reset_command is not None:
             # Clear the last processed command when a different key is seen
             self.last_processed_reset_command = None
