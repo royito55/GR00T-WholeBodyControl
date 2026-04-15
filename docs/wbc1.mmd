@@ -1,0 +1,49 @@
+flowchart LR
+  subgraph BRIDGE[run_groot_closed_loop_bridge.py]
+    STATESUB[Subscribe G1Env env_state_act]
+    CAMCLI[Read camera stream ZMQ]
+    RPC[Call GR00T policy server]
+    MAP[Map model output to WBC goal]
+    PUBGOAL[Publish WBC goal on ControlPolicy upper_body_pose]
+    NAVOUT[navigate_cmd in goal message]
+
+    STATESUB --> RPC
+    CAMCLI --> RPC
+    RPC --> MAP
+    MAP --> NAVOUT
+    MAP --> PUBGOAL
+    NAVOUT --> PUBGOAL
+  end
+
+  subgraph GROOT[GR00T policy server]
+    SERVER[get_action RPC endpoint]
+  end
+
+  subgraph WBC[GR00T WBC control loop]
+    LOOP[run_g1_control_loop.py]
+    SUBGOAL[Subscribe WBC goal from ControlPolicy upper_body_pose]
+    MERGE[G1DecoupledWholeBodyPolicy]
+    UPPER[InterpolationPolicy upper body]
+    LOWER[G1GearWbcPolicy lower body]
+    NAVIN[navigate_cmd consumed]
+    QUEUE[G1Env queue_action]
+    BODYSENDER[BodyCommandSender send_command]
+    BODYCMD[Publish rt lowcmd single publisher in this program]
+    HANDCMD[Publish rt dex3 left right cmd]
+
+    LOOP --> SUBGOAL
+    SUBGOAL --> MERGE
+    MERGE --> UPPER
+    MERGE --> LOWER
+    SUBGOAL --> NAVIN
+    NAVIN --> LOWER
+    UPPER --> QUEUE
+    LOWER --> QUEUE
+    QUEUE --> BODYSENDER
+    BODYSENDER --> BODYCMD
+    QUEUE --> HANDCMD
+  end
+
+  PUBGOAL -->|target_upper_body_pose plus navigate_cmd| SUBGOAL
+  RPC -->|request observation| SERVER
+  SERVER -->|response action_dict | RPC
