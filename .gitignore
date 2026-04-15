@@ -188,6 +188,10 @@ external_dependencies/XRoboToolkit-PC-Service-Pybind/
 # UV
 uv.lock
 
+# Local Python virtual environments
+.venv_humble/
+.venv_teleop/
+
 # XRoboToolkit-PC-Service-Pybind
 xrobotoolkit_sdk.cpython-*-*-*.so
 teleop_vids/
